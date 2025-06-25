@@ -1,0 +1,7 @@
+[
+  {
+    "type": "doctype",
+    "target": "Customer",
+    "hint": "When searching for an existing Customer before creating a new one, be aware that names might have variations (e.g., 'Oproma' vs 'Oproma Inc.'). Consider using wildcard searches (e.g., 'Oproma%') or searching for common abbreviations or suffixes to find near matches before assuming the customer does not exist. Use the 'list_documents' tool with filters and the 'like' operator for wildcard searches."
+  }
+]

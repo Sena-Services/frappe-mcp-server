@@ -1,0 +1,24 @@
+[
+  {
+    "type": "doctype",
+    "target": "Sales Order",
+    "hint": "A Sales Order confirms a sale to a customer. It typically follows a Quotation and precedes a Delivery Note and Sales Invoice. Key fields include 'customer', 'transaction_date', 'delivery_date', and the 'items' table detailing products/services, quantities, and rates. Use this document to lock in the terms of a sale before fulfillment. When creating a Sales Order, ensure the customer details, item specifications, pricing, and delivery dates are accurate. The 'Grand Total' is calculated automatically based on item rates, quantities, and any applicable taxes or discounts."
+  },
+  {
+    "type": "workflow",
+    "target": "Create Invoice from Sales Order",
+    "id": "WF-SAL-001",
+    "description": "Process for creating a Sales Invoice directly from an existing Sales Order to bill the customer.",
+    "steps": [
+      "Open the submitted Sales Order that needs to be invoiced.",
+      "Click on the 'Create' button in the top right corner of the Sales Order form.",
+      "Select 'Sales Invoice' from the dropdown menu.",
+      "In the new Sales Invoice form, verify that all details have been correctly copied from the Sales Order.",
+      "Adjust quantities if you're creating a partial invoice.",
+      "Add any additional charges or adjustments if needed.",
+      "Save and submit the Sales Invoice to finalize the billing.",
+      "The Sales Order's billing status will automatically update to reflect the invoiced amount."
+    ],
+    "related_doctypes": ["Sales Order", "Sales Invoice"]
+  }
+]

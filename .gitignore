@@ -1,0 +1,8 @@
+frappe-mcp-server.log
+
+build/
+node_modules/
+.env
+dist/
+.DS_Store
+RECONCILIATION_STATUS.md
