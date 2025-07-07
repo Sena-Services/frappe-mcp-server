@@ -9,6 +9,7 @@ import {
   getRequiredFields
 } from "./frappe-helpers.js";
 import { getInstructions } from "./frappe-instructions.js";
+import { callMethod } from "./frappe-api.js";
 
 // Define new tool handlers
 export async function handleHelperToolCall(request: any): Promise<any> {
@@ -128,6 +129,38 @@ export async function handleHelperToolCall(request: any): Promise<any> {
         return {
           content: [{ type: "text", text: instructions }],
         };
+      
+      case "send_whatsapp_message":
+        if (!args.to || !args.message) {
+          return {
+            content: [{ type: "text", text: "Missing required parameters: to and message" }],
+            isError: true,
+          };
+        }
+        try {
+          const result = await callMethod(
+            "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message.send_whatsapp_message",
+            {
+              to: args.to,
+              message: args.message,
+              content_type: args.content_type || "text",
+              reference_doctype: args.reference_doctype,
+              reference_name: args.reference_name,
+            }
+          );
+          return {
+            content: [{
+              type: "text",
+              text: `WhatsApp message sent successfully. Result: ${JSON.stringify(result, null, 2)}`
+            }],
+          };
+        } catch (error) {
+          console.error("Error sending WhatsApp message:", error);
+          return {
+            content: [{ type: "text", text: "Failed to send WhatsApp message: " + (error as Error).message }],
+            isError: true,
+          };
+        }
 
       default:
         return {

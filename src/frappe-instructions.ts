@@ -623,5 +623,36 @@ export const HELPER_TOOLS = [
       },
       required: ["category", "operation"]
     }
+  },
+  {
+    name: "send_whatsapp_message",
+    description: "Send a WhatsApp message using the integrated provider",
+    inputSchema: {
+      type: "object",
+      properties: {
+        to: { 
+          type: "string", 
+          description: "The recipient's phone number in international format (e.g., +1234567890)" 
+        },
+        message: { 
+          type: "string", 
+          description: "The text message content to send" 
+        },
+        content_type: {
+          type: "string",
+          description: "Type of message content (e.g., text, image, document). Defaults to 'text'.",
+          default: "text"
+        },
+        reference_doctype: {
+          type: "string",
+          description: "Optional: The DocType this message relates to (e.g., 'Sales Order')."
+        },
+        reference_name: {
+          type: "string",
+          description: "Optional: The specific document name this message relates to (e.g., 'SO-0001')."
+        }
+      },
+      required: ["to", "message"],
+    },
   }
 ];

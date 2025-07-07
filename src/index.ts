@@ -15,9 +15,6 @@ function createMcpServer(): Server {
         { name: "frappe-mcp-server", version: "0.2.16" },
         { capabilities: { resources: {}, tools: {} } }
     );
-    console.error("Heree, received a request.");
-    
-    console.error("MCP Test: Inspecting ListToolsRequestSchema:", JSON.stringify(ListToolsRequestSchema, null, 2));
 
     setupSchemaTools(mcpServer);
     mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
