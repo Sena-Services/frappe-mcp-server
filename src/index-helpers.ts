@@ -162,6 +162,38 @@ export async function handleHelperToolCall(request: any): Promise<any> {
           };
         }
 
+      case "send_instagram_message":
+        if (!args.to || !args.message) {
+          return {
+            content: [{ type: "text", text: "Missing required parameters: to and message" }],
+            isError: true,
+          };
+        }
+        try {
+          const result = await callMethod(
+            "frappe_whatsapp.frappe_whatsapp.doctype.instagram_message.instagram_message.send_instagram_message",
+            {
+              to: args.to,
+              message: args.message,
+              content_type: args.content_type || "text",
+              reference_doctype: args.reference_doctype,
+              reference_name: args.reference_name,
+            }
+          );
+          return {
+            content: [{
+              type: "text",
+              text: `Instagram message sent successfully. Result: ${JSON.stringify(result, null, 2)}`
+            }],
+          };
+        } catch (error) {
+          console.error("Error sending Instagram message:", error);
+          return {
+            content: [{ type: "text", text: "Failed to send Instagram message: " + (error as Error).message }],
+            isError: true,
+          };
+        }
+
       default:
         return {
           content: [{ type: "text", text: "Helper module doesn't handle tool: " + name }],
