@@ -12,25 +12,41 @@ export async function getDocTypeSchema(doctype: string): Promise<any> {
   try {
     if (!doctype) throw new Error("DocType name is required");
 
-    // Primary approach: Use the standard API endpoint
-    console.error(`Using standard API endpoint for ${doctype}`);
+    // Primary approach: Get the full DocType document (includes custom fields)
+    console.error(`Getting full DocType document for ${doctype} (includes custom fields)`);
     let response;
+    let customFields = [];
+    
     try {
+      // Get the meta which includes both standard and custom fields
       response = await frappe.call().get('frappe.get_meta', { doctype: doctype });
-      console.error(`Got response from standard API endpoint for ${doctype}`);
-      console.error(`Raw response data:`, JSON.stringify(response?.data, null, 2));
+      console.error(`Got meta response for ${doctype}`);
+      
+      // The meta response already includes custom fields marked with is_custom_field: 1
+      // No need to fetch them separately
     } catch (error) {
-      console.error(`Error using standard API endpoint for ${doctype}:`, error);
+      console.error(`Error getting meta for ${doctype}:`, error);
       // Fallback to document API
     }
 
     // Directly use response data from standard API endpoint
     const docTypeData = response;
-    console.error(`Using /api/v2/doctype/{doctype}/meta format`);
+    console.error(`Processing schema with custom fields`);
 
-    if (docTypeData) {
+    if (docTypeData && docTypeData.message) {
       // If we got schema data from standard API, process and return it
-      const doctypeInfo = docTypeData.doctype || {};
+      const meta = docTypeData.message;
+      const doctypeInfo = meta;
+      
+      // The fields array already contains both standard and custom fields
+      const allFields = meta.fields || [];
+      
+      // Count custom vs standard fields for logging
+      const customFieldsCount = allFields.filter((f: any) => f.is_custom_field === 1).length;
+      const standardFieldsCount = allFields.length - customFieldsCount;
+      
+      console.error(`Total fields: ${allFields.length} (${standardFieldsCount} standard, ${customFieldsCount} custom)`);
+      
       return {
         name: doctype,
         label: doctypeInfo.name || doctype,
@@ -39,7 +55,7 @@ export async function getDocTypeSchema(doctype: string): Promise<any> {
         issingle: doctypeInfo.issingle === 1,
         istable: doctypeInfo.istable === 1,
         custom: doctypeInfo.custom === 1,
-        fields: (docTypeData.fields || []).map((field: any) => ({
+        fields: allFields.map((field: any) => ({
           fieldname: field.fieldname,
           label: field.label,
           fieldtype: field.fieldtype,
@@ -67,6 +83,7 @@ export async function getDocTypeSchema(doctype: string): Promise<any> {
           set_only_once: field.set_only_once === 1,
           allow_bulk_edit: field.allow_bulk_edit === 1,
           translatable: field.translatable === 1,
+          is_custom_field: field.is_custom_field === 1,  // Preserve custom field flag
         })),
         // Include permissions information
         permissions: docTypeData.permissions || [],
