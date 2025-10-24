@@ -133,27 +133,48 @@ export async function handleHelperToolCall(request: any): Promise<any> {
       case "send_whatsapp_message":
         if (!args.to || !args.message) {
           return {
-            content: [{ type: "text", text: "Missing required parameters: to and message" }],
+            content: [{ type: "text", text: "Missing required parameters: to (phone number) and message" }],
             isError: true,
           };
         }
         try {
+          console.error("[WhatsApp MCP DEBUG] Calling send_whatsapp_message with args:", args);
+
+          // Use the senaERP WhatsApp integration API
           const result = await callMethod(
-            "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message.send_whatsapp_message",
+            "senaerp_integrations.whatsapp.doctype.whatsapp_message.whatsapp_message.send_whatsapp_message",
             {
-              to: args.to,
+              to: args.to,  // Phone number with country code
               message: args.message,
               content_type: args.content_type || "text",
-              reference_doctype: args.reference_doctype,
-              reference_name: args.reference_name,
+              attachment: args.attachment || null,
+              reference_doctype: args.reference_doctype || null,
+              reference_name: args.reference_name || null
             }
           );
-          return {
-            content: [{
-              type: "text",
-              text: `WhatsApp message sent successfully. Result: ${JSON.stringify(result, null, 2)}`
-            }],
-          };
+
+          console.error("[WhatsApp MCP DEBUG] Got result:", JSON.stringify(result, null, 2));
+
+          // Frappe wraps responses in a "message" key
+          const data = result?.message || result;
+          console.error("[WhatsApp MCP DEBUG] Unwrapped data:", JSON.stringify(data, null, 2));
+
+          if (data && data.status === "success") {
+            return {
+              content: [{
+                type: "text",
+                text: `WhatsApp message sent successfully!\n\nDocument: ${data.name}\nMessage ID: ${data.message_id}\nStatus: ${data.doc_status}\nTo: ${args.to}\nContent Type: ${args.content_type || 'text'}`
+              }],
+            };
+          } else {
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to send WhatsApp message: ${data?.error || result?.error || 'Unknown error'}`
+              }],
+              isError: true,
+            };
+          }
         } catch (error) {
           console.error("Error sending WhatsApp message:", error);
           return {
@@ -165,27 +186,48 @@ export async function handleHelperToolCall(request: any): Promise<any> {
       case "send_instagram_message":
         if (!args.to || !args.message) {
           return {
-            content: [{ type: "text", text: "Missing required parameters: to and message" }],
+            content: [{ type: "text", text: "Missing required parameters: to (Instagram user ID) and message" }],
             isError: true,
           };
         }
         try {
+          console.error("[Instagram MCP DEBUG] Calling send_instagram_message with args:", args);
+
+          // Use the senaERP Instagram integration API
           const result = await callMethod(
-            "frappe_whatsapp.frappe_whatsapp.doctype.instagram_message.instagram_message.send_instagram_message",
+            "senaerp_integrations.instagram.doctype.instagram_message.instagram_message.send_instagram_message",
             {
-              to: args.to,
+              to: args.to,  // Instagram user ID
               message: args.message,
               content_type: args.content_type || "text",
-              reference_doctype: args.reference_doctype,
-              reference_name: args.reference_name,
+              attachment: args.attachment || null,
+              reference_doctype: args.reference_doctype || null,
+              reference_name: args.reference_name || null
             }
           );
-          return {
-            content: [{
-              type: "text",
-              text: `Instagram message sent successfully. Result: ${JSON.stringify(result, null, 2)}`
-            }],
-          };
+
+          console.error("[Instagram MCP DEBUG] Got result:", JSON.stringify(result, null, 2));
+
+          // Frappe wraps responses in a "message" key
+          const data = result?.message || result;
+          console.error("[Instagram MCP DEBUG] Unwrapped data:", JSON.stringify(data, null, 2));
+
+          if (data && data.status === "success") {
+            return {
+              content: [{
+                type: "text",
+                text: `Instagram message sent successfully!\n\nDocument: ${data.name}\nMessage ID: ${data.message_id}\nStatus: ${data.doc_status}\nTo: ${args.to}\nContent Type: ${args.content_type || 'text'}`
+              }],
+            };
+          } else {
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to send Instagram message: ${data?.error || result?.error || 'Unknown error'}`
+              }],
+              isError: true,
+            };
+          }
         } catch (error) {
           console.error("Error sending Instagram message:", error);
           return {

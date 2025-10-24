@@ -7,6 +7,7 @@ import { DOCUMENT_TOOLS, handleDocumentToolCall } from "./document-operations.js
 import { SCHEMA_TOOLS, setupSchemaTools, handleSchemaToolCall } from "./schema-operations.js";
 import { HELPER_TOOLS } from "./frappe-instructions.js";
 import { handleHelperToolCall } from "./index-helpers.js";
+import { BLUEPRINT_TOOLS, handleBlueprintToolCall } from "./blueprint-operations.js";
 import { validateApiCredentials } from './auth.js';
 import { isJSONRPCRequest } from "@modelcontextprotocol/sdk/types.js";
 
@@ -36,7 +37,7 @@ function createMcpServer(): Server {
                 required: ["method"],
             },
         },
-        ...DOCUMENT_TOOLS, ...SCHEMA_TOOLS, ...HELPER_TOOLS, { name: "ping", description: "A simple tool to check if the server is responding.", inputSchema: { type: "object", properties: {} } }] as Tool[];
+        ...DOCUMENT_TOOLS, ...SCHEMA_TOOLS, ...HELPER_TOOLS, ...BLUEPRINT_TOOLS, { name: "ping", description: "A simple tool to check if the server is responding.", inputSchema: { type: "object", properties: {} } }] as Tool[];
         return { tools };
     });
     mcpServer.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
@@ -45,6 +46,7 @@ function createMcpServer(): Server {
         if (DOCUMENT_TOOLS.find(tool => tool.name === name)) return await handleDocumentToolCall(request);
         if (SCHEMA_TOOLS.find(tool => tool.name === name)) return await handleSchemaToolCall(request);
         if (HELPER_TOOLS.find(tool => tool.name === name)) return await handleHelperToolCall(request);
+        if (BLUEPRINT_TOOLS.find(tool => tool.name === name)) return await handleBlueprintToolCall(request);
         if (name === "ping") return { content: [{ type: "text", text: "pong" }], isError: false };
         return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
     });

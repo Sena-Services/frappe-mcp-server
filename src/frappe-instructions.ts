@@ -626,30 +626,35 @@ export const HELPER_TOOLS = [
   },
   {
     name: "send_whatsapp_message",
-    description: "Send a WhatsApp message using the integrated provider",
+    description: "Send a WhatsApp message directly using phone number. Supports text, images, documents, videos, and audio files.",
     inputSchema: {
       type: "object",
       properties: {
-        to: { 
-          type: "string", 
-          description: "The recipient's phone number in international format (e.g., +1234567890)" 
+        to: {
+          type: "string",
+          description: "Mobile number with country code (e.g., '+1234567890' or '1234567890')"
         },
-        message: { 
-          type: "string", 
-          description: "The text message content to send" 
+        message: {
+          type: "string",
+          description: "The text message content or caption for media messages"
         },
         content_type: {
           type: "string",
-          description: "Type of message content (e.g., text, image, document). Defaults to 'text'.",
+          description: "Type of message: 'text', 'image', 'document', 'video', or 'audio'. Defaults to 'text'",
+          enum: ["text", "image", "document", "video", "audio"],
           default: "text"
+        },
+        attachment: {
+          type: "string",
+          description: "URL or file path for media messages (required for image/document/video/audio content types)"
         },
         reference_doctype: {
           type: "string",
-          description: "Optional: The DocType this message relates to (e.g., 'Sales Order')."
+          description: "Optional: The DocType this message relates to (e.g., 'Sales Order')"
         },
         reference_name: {
           type: "string",
-          description: "Optional: The specific document name this message relates to (e.g., 'SO-0001')."
+          description: "Optional: The specific document name this message relates to (e.g., 'SO-00001')"
         }
       },
       required: ["to", "message"],
@@ -657,30 +662,35 @@ export const HELPER_TOOLS = [
   },
   {
     name: "send_instagram_message",
-    description: "Send an Instagram message using the integrated provider",
+    description: "Send an Instagram message directly using Instagram user ID. Supports text, images, videos, and audio files.",
     inputSchema: {
       type: "object",
       properties: {
-        to: { 
-          type: "string", 
-          description: "The recipient's Instagram user ID" 
+        to: {
+          type: "string",
+          description: "The recipient's Instagram user ID (Instagram Scoped ID - IGSID)"
         },
-        message: { 
-          type: "string", 
-          description: "The text message content to send" 
+        message: {
+          type: "string",
+          description: "The text message content or caption for media messages"
         },
         content_type: {
           type: "string",
-          description: "Type of message content (e.g., text, image, document). Defaults to 'text'.",
+          description: "Type of message: 'text', 'image', 'video', 'audio', 'media', or 'reel'. Defaults to 'text'",
+          enum: ["text", "image", "video", "audio", "media", "reel"],
           default: "text"
+        },
+        attachment: {
+          type: "string",
+          description: "URL or file path for media messages (required for image/video/audio/media/reel content types)"
         },
         reference_doctype: {
           type: "string",
-          description: "Optional: The DocType this message relates to (e.g., 'Sales Conversation')."
+          description: "Optional: The DocType this message relates to (e.g., 'Sales Order')"
         },
         reference_name: {
           type: "string",
-          description: "Optional: The specific document name this message relates to (e.g., 'SALES-CONV-00001')."
+          description: "Optional: The specific document name this message relates to (e.g., 'SO-00001')"
         }
       },
       required: ["to", "message"],
