@@ -8,6 +8,8 @@ import { SCHEMA_TOOLS, setupSchemaTools, handleSchemaToolCall } from "./schema-o
 import { HELPER_TOOLS } from "./frappe-instructions.js";
 import { handleHelperToolCall } from "./index-helpers.js";
 import { BLUEPRINT_TOOLS, handleBlueprintToolCall } from "./blueprint-operations.js";
+import { DOCTYPE_OPERATIONS_TOOLS, handleDoctypeOperationsToolCall } from "./doctype-operations.js";
+import { WORKFLOW_TOOLS, handleWorkflowToolCall } from "./workflow-operations.js";
 import { validateApiCredentials } from './auth.js';
 import { isJSONRPCRequest } from "@modelcontextprotocol/sdk/types.js";
 
@@ -21,23 +23,7 @@ function createMcpServer(): Server {
     mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
         console.error("MCP Test: 'list_tools' request handler was triggered inside createMcpServer.");
         const tools = [
-          {
-            name: "call_method",
-            description: "Execute a whitelisted Frappe method",
-            inputSchema: {
-                type: "object",
-                properties: {
-                    method: { type: "string", description: "Method name to call (whitelisted)" },
-                    params: {
-                        type: "object",
-                        description: "Parameters to pass to the method (optional)",
-                        additionalProperties: true
-                    },
-                },
-                required: ["method"],
-            },
-        },
-        ...DOCUMENT_TOOLS, ...SCHEMA_TOOLS, ...HELPER_TOOLS, ...BLUEPRINT_TOOLS, { name: "ping", description: "A simple tool to check if the server is responding.", inputSchema: { type: "object", properties: {} } }] as Tool[];
+        ...DOCUMENT_TOOLS, ...SCHEMA_TOOLS, ...HELPER_TOOLS, ...BLUEPRINT_TOOLS, ...DOCTYPE_OPERATIONS_TOOLS, ...WORKFLOW_TOOLS, { name: "ping", description: "A simple tool to check if the server is responding.", inputSchema: { type: "object", properties: {} } }] as Tool[];
         return { tools };
     });
     mcpServer.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
@@ -47,6 +33,8 @@ function createMcpServer(): Server {
         if (SCHEMA_TOOLS.find(tool => tool.name === name)) return await handleSchemaToolCall(request);
         if (HELPER_TOOLS.find(tool => tool.name === name)) return await handleHelperToolCall(request);
         if (BLUEPRINT_TOOLS.find(tool => tool.name === name)) return await handleBlueprintToolCall(request);
+        if (DOCTYPE_OPERATIONS_TOOLS.find(tool => tool.name === name)) return await handleDoctypeOperationsToolCall(request);
+        if (WORKFLOW_TOOLS.find(tool => tool.name === name)) return await handleWorkflowToolCall(request);
         if (name === "ping") return { content: [{ type: "text", text: "pong" }], isError: false };
         return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
     });

@@ -27,20 +27,6 @@ export const BLUEPRINT_TOOLS: Tool[] = [
         }
     },
     {
-        name: "list_blueprints",
-        description: "Get list of active blueprints available in the system",
-        inputSchema: {
-            type: "object",
-            properties: {
-                filters: {
-                    type: "object",
-                    description: "Optional filters (default: is_active=1)",
-                    additionalProperties: true
-                }
-            }
-        }
-    },
-    {
         name: "get_blueprint_info",
         description: "Get detailed information about a specific blueprint including actions and conditions",
         inputSchema: {
@@ -76,25 +62,6 @@ export async function handleBlueprintToolCall(request: CallToolRequest): Promise
                 content: [{
                     type: "text",
                     text: `Blueprint executed successfully:\n\n${JSON.stringify(result, null, 2)}`
-                }],
-                isError: false
-            };
-        }
-
-        if (name === "list_blueprints") {
-            const result = await callMethod(
-                "frappe.client.get_list",
-                {
-                    doctype: "BL Blueprint",
-                    filters: args?.filters || { is_active: 1 },
-                    fields: ["name", "blueprint_description"]
-                }
-            );
-
-            return {
-                content: [{
-                    type: "text",
-                    text: `Available blueprints:\n\n${JSON.stringify(result, null, 2)}`
                 }],
                 isError: false
             };

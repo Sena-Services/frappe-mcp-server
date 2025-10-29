@@ -12,120 +12,16 @@ export async function getDocTypeSchema(doctype: string): Promise<any> {
   try {
     if (!doctype) throw new Error("DocType name is required");
 
-    // Primary approach: Get the full DocType document (includes custom fields)
-    console.error(`Getting full DocType document for ${doctype} (includes custom fields)`);
-    let response;
-    let customFields = [];
+    // Use the Document API to get a cleaner, more lightweight schema
+    console.error(`Using document API to get schema for ${doctype}`);
     
     try {
-      // Get the meta which includes both standard and custom fields
-      response = await frappe.call().get('frappe.get_meta', { doctype: doctype });
-      console.error(`Got meta response for ${doctype}`);
-      
-      // The meta response already includes custom fields marked with is_custom_field: 1
-      // No need to fetch them separately
-    } catch (error) {
-      console.error(`Error getting meta for ${doctype}:`, error);
-      // Fallback to document API
-    }
-
-    // Directly use response data from standard API endpoint
-    const docTypeData = response;
-    console.error(`Processing schema with custom fields`);
-
-    if (docTypeData && docTypeData.message) {
-      // If we got schema data from standard API, process and return it
-      const meta = docTypeData.message;
-      const doctypeInfo = meta;
-      
-      // The fields array already contains both standard and custom fields
-      const allFields = meta.fields || [];
-      
-      // Count custom vs standard fields for logging
-      const customFieldsCount = allFields.filter((f: any) => f.is_custom_field === 1).length;
-      const standardFieldsCount = allFields.length - customFieldsCount;
-      
-      console.error(`Total fields: ${allFields.length} (${standardFieldsCount} standard, ${customFieldsCount} custom)`);
-      
-      return {
-        name: doctype,
-        label: doctypeInfo.name || doctype,
-        description: doctypeInfo.description,
-        module: doctypeInfo.module,
-        issingle: doctypeInfo.issingle === 1,
-        istable: doctypeInfo.istable === 1,
-        custom: doctypeInfo.custom === 1,
-        fields: allFields.map((field: any) => ({
-          fieldname: field.fieldname,
-          label: field.label,
-          fieldtype: field.fieldtype,
-          required: field.reqd === 1,
-          description: field.description,
-          default: field.default,
-          options: field.options,
-          // Include validation information
-          min_length: field.min_length,
-          max_length: field.max_length,
-          min_value: field.min_value,
-          max_value: field.max_value,
-          // Include linked DocType information if applicable
-          linked_doctype: field.fieldtype === "Link" ? field.options : null,
-          // Include child table information if applicable
-          child_doctype: field.fieldtype === "Table" ? field.options : null,
-          // Include additional field metadata
-          in_list_view: field.in_list_view === 1,
-          in_standard_filter: field.in_standard_filter === 1,
-          in_global_search: field.in_global_search === 1,
-          bold: field.bold === 1,
-          hidden: field.hidden === 1,
-          read_only: field.read_only === 1,
-          allow_on_submit: field.allow_on_submit === 1,
-          set_only_once: field.set_only_once === 1,
-          allow_bulk_edit: field.allow_bulk_edit === 1,
-          translatable: field.translatable === 1,
-          is_custom_field: field.is_custom_field === 1,  // Preserve custom field flag
-        })),
-        // Include permissions information
-        permissions: docTypeData.permissions || [],
-        // Include naming information
-        autoname: doctypeInfo.autoname,
-        name_case: doctypeInfo.name_case,
-        // Include workflow information if available
-        workflow: docTypeData.workflow || null,
-        // Include additional metadata
-        is_submittable: doctypeInfo.is_submittable === 1,
-        quick_entry: doctypeInfo.quick_entry === 1,
-        track_changes: doctypeInfo.track_changes === 1,
-        track_views: doctypeInfo.track_views === 1,
-        has_web_view: doctypeInfo.has_web_view === 1,
-        allow_rename: doctypeInfo.allow_rename === 1,
-        allow_copy: doctypeInfo.allow_copy === 1,
-        allow_import: doctypeInfo.allow_import === 1,
-        allow_events_in_timeline: doctypeInfo.allow_events_in_timeline === 1,
-        allow_auto_repeat: doctypeInfo.allow_auto_repeat === 1,
-        document_type: doctypeInfo.document_type,
-        icon: doctypeInfo.icon,
-        max_attachments: doctypeInfo.max_attachments,
-      };
-    }
-
-    // Fallback to Document API if standard API failed or didn't return schema data
-    console.error(`Falling back to document API for ${doctype}`);
-    try {
-      console.error(`Using document API to get schema for ${doctype}`);
-
       // 1. Get the DocType document
-      console.error(`Fetching DocType document for ${doctype}`);
       const doctypeDoc = await getDocument("DocType", doctype);
-      console.error(`DocType document response:`, JSON.stringify(doctypeDoc).substring(0, 200) + "...");
-      console.error(`Full DocType document response:`, doctypeDoc);
 
       if (!doctypeDoc) {
         throw new Error(`DocType ${doctype} not found`);
       }
-
-      console.error(`DocTypeDoc.fields before schema construction:`, doctypeDoc.fields);
-      console.error(`DocTypeDoc.permissions before schema construction:`, doctypeDoc.permissions);
 
       return {
         name: doctype,
@@ -135,31 +31,16 @@ export async function getDocTypeSchema(doctype: string): Promise<any> {
         issingle: doctypeDoc.issingle === 1,
         istable: doctypeDoc.istable === 1,
         custom: doctypeDoc.custom === 1,
-        fields: doctypeDoc.fields || [], // Use fields from doctypeDoc if available, otherwise default to empty array
-        permissions: doctypeDoc.permissions || [], // Use permissions from doctypeDoc if available, otherwise default to empty array
+        fields: doctypeDoc.fields || [],
+        permissions: doctypeDoc.permissions || [],
         autoname: doctypeDoc.autoname,
         name_case: doctypeDoc.name_case,
-        workflow: null,
-        is_submittable: doctypeDoc.is_submittable === 1,
-        quick_entry: doctypeDoc.quick_entry === 1,
-        track_changes: doctypeDoc.track_changes === 1,
-        track_views: doctypeDoc.track_views === 1,
-        has_web_view: doctypeDoc.has_web_view === 1,
-        allow_rename: doctypeDoc.allow_rename === 1,
-        allow_copy: doctypeDoc.allow_copy === 1,
-        allow_import: doctypeDoc.allow_import === 1,
-        allow_events_in_timeline: doctypeDoc.allow_events_in_timeline === 1,
-        allow_auto_repeat: doctypeDoc.allow_auto_repeat === 1,
-        document_type: doctypeDoc.document_type,
-        icon: doctypeDoc.icon,
-        max_attachments: doctypeDoc.max_attachments,
+        // Add other properties from the DocType document as needed
       };
     } catch (error) {
       console.error(`Error using document API for ${doctype}:`, error);
-      // If document API also fails, then we cannot retrieve the schema
+      throw new Error(`Could not retrieve schema for DocType ${doctype} using document API`);
     }
-
-    throw new Error(`Could not retrieve schema for DocType ${doctype} using any available method`);
   } catch (error) {
     return handleApiError(error, `get_doctype_schema(${doctype})`);
   }
