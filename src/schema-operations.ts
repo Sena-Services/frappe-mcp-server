@@ -177,7 +177,7 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
           content: [
             {
               type: "text",
-              text: `Schema Summary (retrieved using ${authMethod} authentication):\n${JSON.stringify(summary, null, 2)}\n\nFull Schema:\n${JSON.stringify(schema, null, 2)}`,
+              text: `Schema Summary (retrieved using ${authMethod} authentication):\n${JSON.stringify(summary, null, 2)}`,
             },
           ],
         };
