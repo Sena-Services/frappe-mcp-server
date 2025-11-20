@@ -39,22 +39,32 @@ const getToken = () => {
     console.error("[AUTH] ERROR: Missing API credentials when attempting to create authentication token");
     throw new Error("Authentication failed: Missing API key or secret. Both are required.");
   }
-  
+
   const token = `${FRAPPE_API_KEY}:${FRAPPE_API_SECRET}`;
-  
+
   // Validate token format
   if (!token.includes(':') || token === ':' || token.startsWith(':') || token.endsWith(':')) {
     console.error("[AUTH] ERROR: Malformed authentication token");
     throw new Error("Authentication failed: Malformed token. Check API key and secret format.");
   }
-  
+
   return token;
 };
 
+// Create a safe token getter that doesn't throw (for library mode)
+const getSafeToken = () => {
+  if (!FRAPPE_API_KEY || !FRAPPE_API_SECRET) {
+    return ":";  // Return placeholder, client won't actually be used in library mode
+  }
+  return `${FRAPPE_API_KEY}:${FRAPPE_API_SECRET}`;
+};
+
 // Initialize Frappe JS SDK with enhanced error handling
+// NOTE: This global client is only used for standalone HTTP server mode
+// In library mode, clients are created per-request with specific credentials
 export const frappe = new FrappeApp(FRAPPE_URL, {
   useToken: true,
-  token: getToken,
+  token: getSafeToken,  // Use safe token getter to avoid throwing on import
   type: "token", // For API key/secret pairs
 });
 

@@ -4,6 +4,10 @@
   "description": "Enhanced Model Context Protocol server for Frappe Framework with comprehensive API instructions and helper tools",
   "main": "build/index.js",
   "type": "module",
+  "exports": {
+    ".": "./build/index.js",
+    "./lib": "./build/library.js"
+  },
   "scripts": {
     "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\" && cp -R src/server_hints build/server_hints",
     "start": "node build/index.js",
