@@ -6,64 +6,7 @@
 import axios, { AxiosError } from "axios";
 import { getDocument, listDocuments, getDocTypeSchema } from "./frappe-api.js";
 import { FrappeApp } from "frappe-js-sdk";
-
-/**
- * Error class for Frappe API errors with improved details
- */
-export class FrappeApiError extends Error {
-  statusCode?: number;
-  endpoint?: string;
-  details?: any;
-
-  constructor(message: string, statusCode?: number, endpoint?: string, details?: any) {
-    super(message);
-    this.name = "FrappeApiError";
-    this.statusCode = statusCode;
-    this.endpoint = endpoint;
-    this.details = details;
-  }
-
-  static fromAxiosError(error: AxiosError, operation: string): FrappeApiError {
-    const statusCode = error.response?.status;
-    const endpoint = error.config?.url || "unknown";
-    let message = `Frappe API error during ${operation}: ${error.message}`;
-    let details = null;
-
-    // Extract more detailed error information from Frappe's response
-    if (error.response?.data) {
-      const data = error.response.data as any;
-      if (data.exception) {
-        message = `Frappe exception during ${operation}: ${data.exception}`;
-        details = data;
-      } else if (data._server_messages) {
-        try {
-          // Server messages are often JSON strings inside a string
-          const serverMessages = JSON.parse(data._server_messages);
-          const parsedMessages = Array.isArray(serverMessages) 
-            ? serverMessages.map(msg => {
-                try {
-                  return JSON.parse(msg);
-                } catch {
-                  return msg;
-                }
-              })
-            : [serverMessages];
-          
-          message = `Frappe server message during ${operation}: ${parsedMessages.map(m => m.message || m).join("; ")}`;
-          details = { serverMessages: parsedMessages };
-        } catch (e) {
-          message = `Frappe server message during ${operation}: ${data._server_messages}`;
-          details = { serverMessages: data._server_messages };
-        }
-      } else if (data.message) {
-        message = `Frappe API error during ${operation}: ${data.message}`;
-        details = data;
-      }
-    }
-
-    return new FrappeApiError(message, statusCode, endpoint, details);
-  }
-}
+import { FrappeApiError } from "./errors.js";
 
 /**
  * Check if a DocType exists

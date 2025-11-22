@@ -7,6 +7,7 @@ import { FrappeApp } from "frappe-js-sdk";
 import { createFrappeClient, FrappeClientConfig } from './api-client-factory.js';
 import * as docApi from './document-api-parameterized.js';
 import * as schemaApi from './schema-api-parameterized.js';
+import * as frappeHelpers from './frappe-helpers.js';
 
 import { DOCUMENT_TOOLS } from './document-operations.js';
 import { SCHEMA_TOOLS } from './schema-operations.js';
@@ -333,6 +334,28 @@ export async function executeTool(
       content: [{
         type: "text",
         text: JSON.stringify({ count: result }, null, 2)
+      }],
+      isError: false
+    };
+  }
+
+  if (toolName === "get_required_fields") {
+    const result = await frappeHelpers.getRequiredFields(client, args.doctype);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result, null, 2)
+      }],
+      isError: false
+    };
+  }
+
+  if (toolName === "get_naming_info") {
+    const result = await frappeHelpers.getNamingSeriesInfo(client, args.doctype);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result, null, 2)
       }],
       isError: false
     };

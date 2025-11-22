@@ -29,42 +29,48 @@ export class FrappeApiError extends Error {
     }
     // Extract more detailed error information from Frappe's response
     else if (error.response) {
-      const data = error.response.data as any;
+      try {
+        const data = error.response.data as any;
+        
+        if (error.response.status === 401 || error.response.status === 403) {
+          message = `Authentication failed during ${operation}. Check API key/secret.`;
+          details = {
+            error: "Authentication Error",
+            status: error.response.status,
+            statusText: error.response.statusText,
+            responseData: data
+          };
+        } else if (data && data.exception) {
+          message = `Frappe exception during ${operation}: ${data.exception}`;
+          details = data;
+        } else if (data && data._server_messages) {
+          try {
+            // Server messages are often JSON strings inside a string
+            const serverMessages = JSON.parse(data._server_messages);
+            const parsedMessages = Array.isArray(serverMessages)
+              ? serverMessages.map((msg: string) => {
+                try {
+                  return JSON.parse(msg);
+                } catch {
+                  return msg;
+                }
+              })
+              : [serverMessages];
 
-      if (error.response.status === 401 || error.response.status === 403) {
-        message = `Authentication failed during ${operation}. Check API key/secret.`;
-        details = {
-          error: "Authentication Error",
-          status: error.response.status,
-          statusText: error.response.statusText,
-          responseData: data
-        };
-      } else if (data.exception) {
-        message = `Frappe exception during ${operation}: ${data.exception}`;
-        details = data;
-      } else if (data._server_messages) {
-        try {
-          // Server messages are often JSON strings inside a string
-          const serverMessages = JSON.parse(data._server_messages);
-          const parsedMessages = Array.isArray(serverMessages)
-            ? serverMessages.map((msg: string) => {
-              try {
-                return JSON.parse(msg);
-              } catch {
-                return msg;
-              }
-            })
-            : [serverMessages];
-
-          message = `Frappe server message during ${operation}: ${parsedMessages.map((m: any) => m.message || m).join("; ")}`;
-          details = { serverMessages: parsedMessages };
-        } catch (e) {
-          message = `Frappe server message during ${operation}: ${data._server_messages}`;
-          details = { serverMessages: data._server_messages };
+            message = `Frappe server message during ${operation}: ${parsedMessages.map((m: any) => m.message || m).join("; ")}`;
+            details = { serverMessages: parsedMessages };
+          } catch (e) {
+            message = `Frappe server message during ${operation}: ${data._server_messages}`;
+            details = { serverMessages: data._server_messages };
+          }
+        } else if (data && data.message) {
+          message = `Frappe API error during ${operation}: ${data.message}`;
+          details = data;
         }
-      } else if (data.message) {
-        message = `Frappe API error during ${operation}: ${data.message}`;
-        details = data;
+      } catch (e) {
+        console.error(`[FrappeApiError] Error accessing response data: ${e}`);
+        // Fallback if data access fails
+        message = `Frappe API error during ${operation}: ${error.message} (Response data inaccessible)`;
       }
     }
 
