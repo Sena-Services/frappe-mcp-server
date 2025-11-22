@@ -3,8 +3,9 @@
  * Allows AI agents to execute and manage Frappe blueprints
  */
 
-import { callMethod } from "./frappe-api.js";
+import { createFrappeClient, FrappeClientConfig, callMethod } from "./frappe-api.js";
 import { CallToolRequest, Tool } from "@modelcontextprotocol/sdk/types.js";
+import { FrappeApp } from "frappe-js-sdk";
 
 export const BLUEPRINT_TOOLS: Tool[] = [
     {
@@ -42,8 +43,27 @@ export const BLUEPRINT_TOOLS: Tool[] = [
     }
 ];
 
-export async function handleBlueprintToolCall(request: CallToolRequest): Promise<any> {
+/**
+ * Handler function for blueprint tool calls
+ * @param request - MCP request object
+ * @param credentials - Site-specific credentials (url, api_key, api_secret)
+ */
+export async function handleBlueprintToolCall(request: CallToolRequest, credentials?: FrappeClientConfig): Promise<any> {
     const { name, arguments: args } = request.params;
+
+    // Validate credentials
+    if (!credentials) {
+        return {
+            content: [{
+                type: "text",
+                text: "Error: No credentials provided for API call"
+            }],
+            isError: true
+        };
+    }
+
+    // Create Frappe client with site-specific credentials
+    const client = createFrappeClient(credentials);
 
     try {
         if (name === "execute_blueprint") {
@@ -51,6 +71,7 @@ export async function handleBlueprintToolCall(request: CallToolRequest): Promise
                 throw new Error("Missing arguments for execute_blueprint");
             }
             const result = await callMethod(
+                client,
                 "sentra_core.bl_engine.core.blueprint_executor.execute_blueprint_manually",
                 {
                     blueprint_name: args.blueprint_name,
@@ -72,6 +93,7 @@ export async function handleBlueprintToolCall(request: CallToolRequest): Promise
                 throw new Error("Missing arguments for get_blueprint_info");
             }
             const result = await callMethod(
+                client,
                 "frappe.client.get",
                 {
                     doctype: "BL Blueprint",

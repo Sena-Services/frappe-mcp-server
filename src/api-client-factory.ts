@@ -42,7 +42,9 @@ export function createFrappeClient(config: FrappeClientConfig): FrappeApp {
 
   // Add request interceptor
   client.axios.interceptors.request.use(config => {
-    config.headers = config.headers || {};
+    if (!config.headers) {
+      config.headers = {} as any;
+    }
     config.headers['X-Press-Team'] = team_name;
 
     console.error(`[REQUEST] ${config.method?.toUpperCase()} ${config.url}`);

@@ -6,7 +6,8 @@
  */
 
 import { CallToolRequest, Tool } from "@modelcontextprotocol/sdk/types.js";
-import { callMethod } from "./frappe-api.js";
+import { createFrappeClient, FrappeClientConfig, callMethod } from "./frappe-api.js";
+import { FrappeApp } from "frappe-js-sdk";
 
 export const WORKFLOW_TOOLS: Tool[] = [
     {
@@ -146,9 +147,25 @@ export const WORKFLOW_TOOLS: Tool[] = [
 /**
  * Handle workflow tool calls
  * All implementation delegated to sentra_core.builder.tools.workflow_tools
+ * @param request - MCP request object
+ * @param credentials - Site-specific credentials (url, api_key, api_secret)
  */
-export async function handleWorkflowToolCall(request: CallToolRequest): Promise<any> {
+export async function handleWorkflowToolCall(request: CallToolRequest, credentials?: FrappeClientConfig): Promise<any> {
     const { name, arguments: args } = request.params;
+
+    // Validate credentials
+    if (!credentials) {
+        return {
+            content: [{
+                type: "text",
+                text: "Error: No credentials provided for API call"
+            }],
+            isError: true
+        };
+    }
+
+    // Create Frappe client with site-specific credentials
+    const client = createFrappeClient(credentials);
 
     try {
         console.error(`Handling workflow tool: ${name} with args:`, args);
@@ -159,7 +176,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest): Promise<
                 throw new Error("Missing required arguments: name, triggers, and actions are required");
             }
 
-            const result = await callMethod(
+            const result = await callMethod(client, 
                 "sentra_core.builder.tools.workflow_tools.create_blueprint_util",
                 {
                     name: args.name,
@@ -184,7 +201,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest): Promise<
                 throw new Error("Missing required argument: blueprint_id");
             }
 
-            const result = await callMethod(
+            const result = await callMethod(client, 
                 "sentra_core.builder.tools.workflow_tools.read_blueprint_util",
                 {
                     blueprint_id: args.blueprint_id
@@ -205,7 +222,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest): Promise<
                 throw new Error("Missing required argument: blueprint_id");
             }
 
-            const result = await callMethod(
+            const result = await callMethod(client, 
                 "sentra_core.builder.tools.workflow_tools.update_blueprint_util",
                 {
                     blueprint_id: args.blueprint_id,
@@ -230,7 +247,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest): Promise<
                 throw new Error("Missing required argument: blueprint_id");
             }
 
-            const result = await callMethod(
+            const result = await callMethod(client, 
                 "sentra_core.builder.tools.workflow_tools.delete_blueprint_util",
                 {
                     blueprint_id: args.blueprint_id
@@ -247,7 +264,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest): Promise<
         }
 
         if (name === "list_blueprints") {
-            const result = await callMethod(
+            const result = await callMethod(client, 
                 "sentra_core.builder.tools.workflow_tools.list_blueprints_util",
                 {
                     filters: args?.filters || null
@@ -268,7 +285,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest): Promise<
                 throw new Error("Missing required argument: blueprint_json");
             }
 
-            const result = await callMethod(
+            const result = await callMethod(client, 
                 "sentra_core.builder.tools.workflow_tools.validate_blueprint_util",
                 {
                     blueprint_json: args.blueprint_json
@@ -285,7 +302,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest): Promise<
         }
 
         if (name === "get_available_events") {
-            const result = await callMethod(
+            const result = await callMethod(client, 
                 "sentra_core.builder.tools.workflow_tools.get_available_events_util",
                 {}
             );
@@ -300,7 +317,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest): Promise<
         }
 
         if (name === "get_available_actions") {
-            const result = await callMethod(
+            const result = await callMethod(client, 
                 "sentra_core.builder.tools.workflow_tools.get_available_actions_util",
                 {}
             );

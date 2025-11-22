@@ -10,8 +10,9 @@
  * update_document, delete_document, list_documents for CRUD configs.
  */
 
-import { callMethod } from "./frappe-api.js";
+import { createFrappeClient, FrappeClientConfig, callMethod } from "./frappe-api.js";
 import { CallToolRequest, Tool } from "@modelcontextprotocol/sdk/types.js";
+import { FrappeApp } from "frappe-js-sdk";
 
 export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
     {
@@ -141,8 +142,27 @@ export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
     }
 ];
 
-export async function handleDoctypeOperationsToolCall(request: CallToolRequest): Promise<any> {
+/**
+ * Handler function for DocType operation tool calls
+ * @param request - MCP request object
+ * @param credentials - Site-specific credentials (url, api_key, api_secret)
+ */
+export async function handleDoctypeOperationsToolCall(request: CallToolRequest, credentials?: FrappeClientConfig): Promise<any> {
     const { name, arguments: args } = request.params;
+
+    // Validate credentials
+    if (!credentials) {
+        return {
+            content: [{
+                type: "text",
+                text: "Error: No credentials provided for API call"
+            }],
+            isError: true
+        };
+    }
+
+    // Create Frappe client with site-specific credentials
+    const client = createFrappeClient(credentials);
 
     try {
         console.error(`Handling DocType operation tool: ${name} with args:`, args);
@@ -154,6 +174,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest):
 
             // Call the Frappe backend method
             const result = await callMethod(
+                client,
                 "sentra_core.builder.tools.data_tools.create_doctype_util",
                 {
                     name: args.name,
@@ -179,6 +200,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest):
             }
 
             const result = await callMethod(
+                client,
                 "sentra_core.builder.tools.data_tools.create_child_table_util",
                 {
                     parent_doctype: args.parent_doctype,
@@ -203,6 +225,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest):
             }
 
             const result = await callMethod(
+                client,
                 "sentra_core.builder.tools.data_tools.add_fields_to_doctype_util",
                 {
                     doctype_name: args.doctype_name,
@@ -225,6 +248,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest):
             }
 
             const result = await callMethod(
+                client,
                 "sentra_core.builder.tools.data_tools.delete_doctype",
                 {
                     doctype_name: args.doctype_name

@@ -1,7 +1,15 @@
-// Re-export everything from the new modular files
+/**
+ * Frappe API - Main export file
+ * Re-exports parameterized API functions for multi-tenant support
+ */
+
+// Error handling
 export { FrappeApiError, handleApiError } from './errors.js';
-export { frappe } from './api-client.js';
-export { checkFrappeApiHealth } from './auth.js';
+
+// API client factory (multi-tenant)
+export { createFrappeClient, FrappeClientConfig } from './api-client-factory.js';
+
+// Document operations (parameterized)
 export {
   getDocument,
   createDocument,
@@ -9,10 +17,12 @@ export {
   deleteDocument,
   listDocuments,
   callMethod
-} from './document-api.js';
+} from './document-api-parameterized.js';
+
+// Schema operations (parameterized)
 export {
   getDocTypeSchema,
   getFieldOptions,
   getAllDocTypes,
   getAllModules
-} from './schema-api.js';
+} from './schema-api-parameterized.js';

@@ -3,8 +3,10 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { callMethod } from "./frappe-api.js";
 import {
+  createFrappeClient,
+  FrappeClientConfig,
+  callMethod,
   createDocument,
   getDocument,
   updateDocument,
@@ -13,6 +15,7 @@ import {
   FrappeApiError
 } from "./frappe-api.js";
 import { getRequiredFields, formatFilters } from "./frappe-helpers.js";
+import { FrappeApp } from "frappe-js-sdk";
 import { FRAPPE_INSTRUCTIONS } from "./frappe-instructions.js";
 
 /**
@@ -113,9 +116,9 @@ function formatErrorResponse(error: any, operation: string): any {
 /**
  * Validate document values against required fields
  */
-async function validateDocumentValues(doctype: string, values: Record<string, any>): Promise<string[]> {
+async function validateDocumentValues(client: FrappeApp, doctype: string, values: Record<string, any>): Promise<string[]> {
   try {
-    const requiredFields = await getRequiredFields(doctype);
+    const requiredFields = await getRequiredFields(client, doctype);
     const missingFields = requiredFields
       .filter(field => !values.hasOwnProperty(field.fieldname))
       .map(field => field.fieldname);
@@ -262,8 +265,12 @@ export const DOCUMENT_TOOLS = [
   },
 ];
 
-// Export a handler function for document tool calls
-export async function handleDocumentToolCall(request: any): Promise<any> {
+/**
+ * Handler function for document tool calls
+ * @param request - MCP request object
+ * @param credentials - Site-specific credentials (url, api_key, api_secret)
+ */
+export async function handleDocumentToolCall(request: any, credentials?: FrappeClientConfig): Promise<any> {
   const { name, arguments: args } = request.params;
 
   if (!args) {
@@ -277,6 +284,21 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
       isError: true,
     };
   }
+
+  // Create Frappe client with credentials
+  if (!credentials) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: "Error: No credentials provided for API call",
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  const client = createFrappeClient(credentials);
 
   try {
     console.error("Handling document tool:", name, "with args:", args);
@@ -299,7 +321,7 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
       }
 
       // Validate required fields
-      const missingFields = await validateDocumentValues(doctype, values);
+      const missingFields = await validateDocumentValues(client, doctype, values);
       if (missingFields.length > 0) {
         return {
           content: [
@@ -320,14 +342,13 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
         console.error(`Calling createDocument for ${doctype} with values:`, JSON.stringify(values, null, 2));
 
         let result;
-        let authMethod = "token";
+        let authMethod = "api_key";
         let verificationSuccess = false;
         let verificationMessage = "";
 
-        // Use API key/secret authentication
-        result = await createDocument(doctype, values);
-        console.error(`Result from createDocument (API key/secret auth):`, JSON.stringify(result, null, 2));
-        authMethod = "api_key";
+        // Use API key/secret authentication with site-specific client
+        result = await createDocument(client, doctype, values);
+        console.error(`Result from createDocument:`, JSON.stringify(result, null, 2));
 
         // Check for verification result
         if (result._verification && result._verification.success === false) {
@@ -381,19 +402,14 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
       }
 
       try {
-        let document;
-        let authMethod = "token";
-
-        // Use API key/secret authentication
-        document = await getDocument(doctype, docName, fields);
-        console.error(`Retrieved document using API key/secret auth:`, JSON.stringify(document, null, 2));
-        authMethod = "api_key";
+        const document = await getDocument(client, doctype, docName, fields);
+        console.error(`Retrieved document:`, JSON.stringify(document, null, 2));
 
         return {
           content: [
             {
               type: "text",
-              text: `Document retrieved using ${authMethod} authentication:\n\n${JSON.stringify(document, null, 2)}`,
+              text: `Document retrieved:\n\n${JSON.stringify(document, null, 2)}`,
             },
           ],
         };
@@ -418,19 +434,14 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
       }
 
       try {
-        let result;
-        let authMethod = "token";
-
-        // Use API key/secret authentication
-        result = await updateDocument(doctype, docName, values);
-        console.error(`Result from updateDocument (API key/secret auth):`, JSON.stringify(result, null, 2));
-        authMethod = "api_key";
+        const result = await updateDocument(client, doctype, docName, values);
+        console.error(`Result from updateDocument:`, JSON.stringify(result, null, 2));
 
         return {
           content: [
             {
               type: "text",
-              text: `Document updated successfully using ${authMethod} authentication:\n\n${JSON.stringify(result, null, 2)}`,
+              text: `Document updated successfully:\n\n${JSON.stringify(result, null, 2)}`,
             },
           ],
         };
@@ -454,12 +465,8 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
       }
 
       try {
-        let authMethod = "token";
-
-        // Use API key/secret authentication
-        await deleteDocument(doctype, docName);
-        console.error(`Document deleted using API key/secret auth`);
-        authMethod = "api_key";
+        await deleteDocument(client, doctype, docName);
+        console.error(`Document deleted`);
 
         return {
           content: [
@@ -467,7 +474,7 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
               type: "text",
               text: JSON.stringify({
                 success: true,
-                message: `Document ${doctype}/${docName} deleted successfully using ${authMethod} authentication`
+                message: `Document ${doctype}/${docName} deleted successfully`
               }, null, 2),
             },
           ],
@@ -499,11 +506,8 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
         // Format filters if provided
         const formattedFilters = filters ? formatFilters(filters) : undefined;
 
-        let documents;
-        let authMethod = "token";
-
-        // Use API key/secret authentication
-        documents = await listDocuments(
+        const documents = await listDocuments(
+          client,
           doctype,
           formattedFilters,
           fields,
@@ -511,8 +515,7 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
           order_by,
           limit_start
         );
-        console.error(`Retrieved ${documents.length} documents using API key/secret auth`);
-        authMethod = "api_key";
+        console.error(`Retrieved ${documents.length} documents`);
 
         // Add pagination info if applicable
         let paginationInfo = "";
@@ -530,7 +533,7 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
           content: [
             {
               type: "text",
-              text: `Documents retrieved using ${authMethod} authentication:\n\n${JSON.stringify(documents, null, 2)}${paginationInfo}`,
+              text: `Documents retrieved:\n\n${JSON.stringify(documents, null, 2)}${paginationInfo}`,
             },
           ],
         };
@@ -572,7 +575,7 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
         };
 
         console.error(`Calling Frappe method '${frappeMethod}' with params:`, JSON.stringify(params, null, 2));
-        const result = await callMethod(frappeMethod, params);
+        const result = await callMethod(client, frappeMethod, params);
         console.error(`Result from '${frappeMethod}':`, JSON.stringify(result, null, 2));
 
         return {
@@ -614,8 +617,10 @@ export function setupDocumentTools(server: Server): void {
 
 /**
  * Handle call_method tool call
+ * @param request - MCP request object
+ * @param credentials - Site-specific credentials (url, api_key, api_secret)
  */
-export async function handleCallMethodToolCall(request: any): Promise<any> {
+export async function handleCallMethodToolCall(request: any, credentials?: FrappeClientConfig): Promise<any> {
   const { name, arguments: args } = request.params;
 
   if (!args) {
@@ -629,6 +634,21 @@ export async function handleCallMethodToolCall(request: any): Promise<any> {
       isError: true,
     };
   }
+
+  // Create Frappe client with credentials
+  if (!credentials) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: "Error: No credentials provided for API call",
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  const client = createFrappeClient(credentials);
 
   try {
     console.error(`Handling call_method tool with args:`, args);
@@ -647,7 +667,7 @@ export async function handleCallMethodToolCall(request: any): Promise<any> {
       };
     }
 
-    const result = await callMethod(method, params);
+    const result = await callMethod(client, method, params);
     return {
       content: [
         {

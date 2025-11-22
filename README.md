@@ -73,17 +73,53 @@ The server provides detailed error messages to help diagnose authentication issu
 
 ## Usage
 
-### Starting the Server
+### Single-Tenant Mode (Development)
+
+For development with a single Frappe site:
 
 ```bash
+FRAPPE_URL=https://your-frappe-instance.com \
+FRAPPE_API_KEY=your_api_key \
+FRAPPE_API_SECRET=your_api_secret \
 npx frappe-mcp-server
 ```
 
-Or with environment variables:
+### Multi-Tenant Mode (Production)
+
+For production environments with multiple Frappe sites:
+
+1. Create a `mcp-sites.json` configuration file:
+
+```json
+{
+  "sites": {
+    "site1.example.com": {
+      "url": "https://site1.example.com",
+      "api_key": "your_api_key",
+      "api_secret": "your_api_secret"
+    },
+    "site2.example.com": {
+      "url": "https://site2.example.com",
+      "api_key": "your_api_key",
+      "api_secret": "your_api_secret"
+    }
+  }
+}
+```
+
+2. Start the multi-tenant server:
 
 ```bash
-FRAPPE_URL=https://your-frappe-instance.com FRAPPE_API_KEY=your_api_key FRAPPE_API_SECRET=your_api_secret npx frappe-mcp-server
+MCP_PORT=4000 \
+SITES_CONFIG_PATH=/path/to/mcp-sites.json \
+node multitenant-server.cjs
 ```
+
+The multi-tenant server includes:
+- **Session management**: Persistent sessions across requests for better performance
+- **Config caching**: 5-minute cache with on-demand loading (no polling)
+- **Site isolation**: Each site has isolated credentials and sessions
+- **Health endpoints**: `/health`, `/sites`, `/sessions` for monitoring
 
 ### Integrating with AI Assistants
 

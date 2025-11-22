@@ -14,8 +14,8 @@ export async function getDocTypeSchema(client: FrappeApp, doctype: string): Prom
     let response;
 
     try {
-      // Get the meta which includes both standard and custom fields
-      response = await client.call().get('frappe.get_meta', { doctype: doctype });
+      // Use the whitelisted frappe.desk.form.load.getdoctype method
+      response = await client.call().get('frappe.desk.form.load.getdoctype', { doctype: doctype });
       console.error(`Got meta response for ${doctype}`);
     } catch (error) {
       console.error(`Error getting meta for ${doctype}:`, error);
@@ -24,8 +24,9 @@ export async function getDocTypeSchema(client: FrappeApp, doctype: string): Prom
 
     const docTypeData = response;
 
-    if (docTypeData && docTypeData.message) {
-      const meta = docTypeData.message;
+    // The getdoctype response has docs array, first element is the DocType
+    if (docTypeData && docTypeData.docs && docTypeData.docs[0]) {
+      const meta = docTypeData.docs[0];
       const allFields = meta.fields || [];
 
       const customFieldsCount = allFields.filter((f: any) => f.is_custom_field === 1).length;

@@ -1,13 +1,8 @@
-import { frappe } from './api-client.js';
-
-// Authentication state tracking
-let isAuthenticated = false;
-let authenticationInProgress = false;
-let lastAuthAttempt = 0;
-const AUTH_TIMEOUT = 1000 * 60 * 30; // 30 minutes
+import { FrappeApp } from "frappe-js-sdk";
 
 /**
  * Validates that the required API credentials are available
+ * For single-tenant mode only (environment variables)
  * @returns Object indicating if credentials are valid with detailed message
  */
 export function validateApiCredentials(): {
@@ -16,28 +11,28 @@ export function validateApiCredentials(): {
 } {
   const apiKey = process.env.FRAPPE_API_KEY;
   const apiSecret = process.env.FRAPPE_API_SECRET;
-  
+
   if (!apiKey && !apiSecret) {
     return {
       valid: false,
       message: "Authentication failed: Both API key and API secret are missing. API key/secret is the only supported authentication method."
     };
   }
-  
+
   if (!apiKey) {
     return {
       valid: false,
       message: "Authentication failed: API key is missing. API key/secret is the only supported authentication method."
     };
   }
-  
+
   if (!apiSecret) {
     return {
       valid: false,
       message: "Authentication failed: API secret is missing. API key/secret is the only supported authentication method."
     };
   }
-  
+
   return {
     valid: true,
     message: "API credentials validation successful."
@@ -46,9 +41,11 @@ export function validateApiCredentials(): {
 
 /**
  * Check the health of the Frappe API connection
+ * Parameterized version for multi-tenant support
+ * @param client - Frappe client instance
  * @returns Health status information
  */
-export async function checkFrappeApiHealth(): Promise<{
+export async function checkFrappeApiHealth(client: FrappeApp): Promise<{
   healthy: boolean;
   tokenAuth: boolean;
   message: string;
@@ -59,19 +56,11 @@ export async function checkFrappeApiHealth(): Promise<{
     message: ""
   };
 
-  // First validate credentials
-  const credentialsCheck = validateApiCredentials();
-  if (!credentialsCheck.valid) {
-    result.message = credentialsCheck.message;
-    console.error(`API Health Check: ${result.message}`);
-    return result;
-  }
-
   try {
     // Try token authentication
     try {
       console.error("Attempting token authentication health check...");
-      const tokenResponse = await frappe.db().getDocList("DocType", { limit: 1 });
+      await client.db().getDocList("DocType", { limit: 1 });
       result.tokenAuth = true;
       console.error("Token authentication health check successful");
     } catch (tokenError) {

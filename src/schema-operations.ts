@@ -8,6 +8,8 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import {
+  createFrappeClient,
+  FrappeClientConfig,
   getDocTypeSchema,
   getFieldOptions,
   FrappeApiError,
@@ -15,6 +17,7 @@ import {
   getAllModules
 } from "./frappe-api.js";
 import { formatFilters } from "./frappe-helpers.js";
+import { FrappeApp } from "frappe-js-sdk";
 import {
   getDocTypeHints,
   getWorkflowHints,
@@ -57,18 +60,6 @@ export const SCHEMA_TOOLS = [
       },
       required: ["doctype", "fieldname"]
     }
-  },
-  {
-    name: "get_frappe_usage_info",
-    description: "Get combined information about a DocType or workflow, including schema metadata and usage guidance from static hints.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        doctype: { type: "string", description: "DocType name (optional if workflow is provided)" },
-        workflow: { type: "string", description: "Workflow name (optional if doctype is provided)" }
-      },
-      required: []
-    }
   }
 ];
 
@@ -107,8 +98,12 @@ function formatErrorResponse(error: any, operation: string): any {
   };
 }
 
-// Export a handler function for schema tool calls
-export async function handleSchemaToolCall(request: any): Promise<any> {
+/**
+ * Handler function for schema tool calls
+ * @param request - MCP request object
+ * @param credentials - Site-specific credentials (url, api_key, api_secret)
+ */
+export async function handleSchemaToolCall(request: any, credentials?: FrappeClientConfig): Promise<any> {
   const { name, arguments: args } = request.params;
 
   if (!args) {
@@ -122,6 +117,21 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
       isError: true,
     };
   }
+
+  // Create Frappe client with credentials
+  if (!credentials) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: "Error: No credentials provided for API call",
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  const client = createFrappeClient(credentials);
 
   try {
     console.error(`Handling schema tool: ${name} with args:`, args);
@@ -142,12 +152,10 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
 
       try {
         let schema;
-        let authMethod = "token";
 
-        // Get schema using API key/secret authentication
-        schema = await getDocTypeSchema(doctype);
-        console.error(`Retrieved schema for ${doctype} using API key/secret auth`);
-        authMethod = "api_key";
+        // Get schema entication
+        schema = await getDocTypeSchema(client, doctype);
+        console.error(`Retrieved schema for ${doctype} `);
 
         // Add a summary of the schema for easier understanding
         const fieldTypes = schema.fields.reduce((acc: Record<string, number>, field: any) => {
@@ -169,15 +177,14 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
           fieldCount: schema.fields.length,
           fieldTypes: fieldTypes,
           requiredFields: requiredFields,
-          permissions: schema.permissions.length,
-          authMethod: authMethod
+          permissions: schema.permissions.length
         };
 
         return {
           content: [
             {
               type: "text",
-              text: `Schema Summary (retrieved using ${authMethod} authentication):\n${JSON.stringify(summary, null, 2)}`,
+              text: `Schema Summary:\n${JSON.stringify(summary, null, 2)}`,
             },
           ],
         };
@@ -205,7 +212,7 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
 
       try {
         // First get the field metadata to understand what we're dealing with
-        const schema = await getDocTypeSchema(doctype);
+        const schema = await getDocTypeSchema(client, doctype);
         const field = schema.fields.find((f: any) => f.fieldname === fieldname);
 
         if (!field) {
@@ -220,8 +227,8 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
           };
         }
 
-        // Get the options
-        const options = await getFieldOptions(doctype, fieldname, formattedFilters);
+        // Get the options (filters are handled internally by getFieldOptions if needed)
+        const options = await getFieldOptions(client, doctype, fieldname);
 
         // Add field metadata to the response
         const fieldInfo = {
@@ -275,21 +282,21 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
         if (doctype) {
           try {
             // Get schema
-            result.schema = await getDocTypeSchema(doctype);
+            result.schema = await getDocTypeSchema(client, doctype);
             
             // Get static hints
             result.hints = getDocTypeHints(doctype);
             result.related_workflows = findWorkflowsForDocType(doctype);
-            
+
             // Get app-provided instructions
-            result.app_instructions = await getDocTypeUsageInstructions(doctype);
-            
+            result.app_instructions = await getDocTypeUsageInstructions(client, doctype);
+
             // If no app instructions but we have the app name, try to get app-level instructions
             if (!result.app_instructions) {
-              const appName = await getAppForDocType(doctype);
+              const appName = await getAppForDocType(client, doctype);
               if (appName) {
                 result.app_name = appName;
-                result.app_level_instructions = await getAppUsageInstructions(appName);
+                result.app_level_instructions = await getAppUsageInstructions(client, appName);
               }
             }
           } catch (error) {
@@ -456,6 +463,11 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
   }
 }
 
+/**
+ * Setup schema resource handlers (legacy single-tenant mode only)
+ * NOTE: This function is only used in single-tenant index.ts
+ * Multi-tenant mode uses handleSchemaToolCall with per-site credentials
+ */
 export function setupSchemaTools(server: Server): void {
   // Initialize static hints
   console.error("Initializing static hints...");
@@ -463,6 +475,13 @@ export function setupSchemaTools(server: Server): void {
     console.error("Static hints initialized successfully");
   }).catch(error => {
     console.error("Error initializing static hints:", error);
+  });
+
+  // Create client from environment variables for single-tenant mode
+  const singleTenantClient = createFrappeClient({
+    url: process.env.FRAPPE_URL || '',
+    api_key: process.env.FRAPPE_API_KEY || '',
+    api_secret: process.env.FRAPPE_API_SECRET || ''
   });
   
   // Initialize app introspection
@@ -519,7 +538,7 @@ export function setupSchemaTools(server: Server): void {
 
         // Special case for modules list
         if (doctype === "modules") {
-          const modules = await getAllModules();
+          const modules = await getAllModules(singleTenantClient);
           return {
             contents: [
               {
@@ -533,7 +552,7 @@ export function setupSchemaTools(server: Server): void {
 
         // Special case for doctypes list
         if (doctype === "doctypes") {
-          const doctypes = await getAllDocTypes();
+          const doctypes = await getAllDocTypes(singleTenantClient);
           return {
             contents: [
               {
@@ -546,7 +565,7 @@ export function setupSchemaTools(server: Server): void {
         }
 
         // Regular DocType schema
-        const schema = await getDocTypeSchema(doctype);
+        const schema = await getDocTypeSchema(singleTenantClient, doctype);
         return {
           contents: [
             {
@@ -563,7 +582,7 @@ export function setupSchemaTools(server: Server): void {
       if (optionsMatch) {
         const doctype = decodeURIComponent(optionsMatch[1]);
         const fieldname = decodeURIComponent(optionsMatch[2]);
-        const options = await getFieldOptions(doctype, fieldname);
+        const options = await getFieldOptions(singleTenantClient, doctype, fieldname);
 
         return {
           contents: [

@@ -5,6 +5,7 @@
 
 import axios, { AxiosError } from "axios";
 import { getDocument, listDocuments, getDocTypeSchema } from "./frappe-api.js";
+import { FrappeApp } from "frappe-js-sdk";
 
 /**
  * Error class for Frappe API errors with improved details
@@ -66,16 +67,17 @@ export class FrappeApiError extends Error {
 
 /**
  * Check if a DocType exists
+ * @param client Frappe client instance
  * @param doctype The DocType name to check
  * @returns True if the DocType exists, false otherwise
  */
-export async function doesDocTypeExist(doctype: string): Promise<boolean> {
+export async function doesDocTypeExist(client: FrappeApp, doctype: string): Promise<boolean> {
   try {
-    await getDocTypeSchema(doctype);
+    await getDocTypeSchema(client, doctype);
     return true;
   } catch (error) {
-    if (error instanceof Error && 
-        (error.message.includes("not found") || 
+    if (error instanceof Error &&
+        (error.message.includes("not found") ||
          error.message.includes("does not exist"))) {
       return false;
     }
@@ -89,9 +91,9 @@ export async function doesDocTypeExist(doctype: string): Promise<boolean> {
  * @param name The document name
  * @returns True if the document exists, false otherwise
  */
-export async function doesDocumentExist(doctype: string, name: string): Promise<boolean> {
+export async function doesDocumentExist(client: FrappeApp, doctype: string, name: string): Promise<boolean> {
   try {
-    await getDocument(doctype, name, ["name"]);
+    await getDocument(client, doctype, name, ["name"]);
     return true;
   } catch (error) {
     if (error instanceof Error && 
@@ -110,7 +112,7 @@ export async function doesDocumentExist(doctype: string, name: string): Promise<
  * @returns Array of matching DocTypes with their details
  */
 export async function findDocTypes(
-  searchTerm: string, 
+  client: FrappeApp, searchTerm: string, 
   options: {
     module?: string;
     isTable?: boolean;
@@ -143,7 +145,7 @@ export async function findDocTypes(
     filters.custom = options.isCustom ? 1 : 0;
   }
   
-  return await listDocuments(
+  return await listDocuments(client, 
     "DocType",
     filters,
     ["name", "module", "description", "istable", "issingle", "custom"],
@@ -155,9 +157,9 @@ export async function findDocTypes(
  * Get a list of all modules in the system
  * @returns Array of module names
  */
-export async function getModuleList(): Promise<string[]> {
+export async function getModuleList(client: FrappeApp): Promise<string[]> {
   try {
-    const modules = await listDocuments(
+    const modules = await listDocuments(client, 
       "Module Def",
       {},
       ["name", "module_name"],
@@ -178,8 +180,8 @@ export async function getModuleList(): Promise<string[]> {
  * @param module The module name
  * @returns Array of DocTypes in the module
  */
-export async function getDocTypesInModule(module: string): Promise<any[]> {
-  return await listDocuments(
+export async function getDocTypesInModule(client: FrappeApp, module: string): Promise<any[]> {
+  return await listDocuments(client, 
     "DocType",
     { module: module },
     ["name", "description", "istable", "issingle", "custom"],
@@ -194,12 +196,12 @@ export async function getDocTypesInModule(module: string): Promise<any[]> {
  * @returns The count of matching documents
  */
 export async function getDocumentCount(
-  doctype: string,
+  client: FrappeApp, doctype: string,
   filters: Record<string, any> = {}
 ): Promise<number> {
   try {
     // Use count(*) to get the total count of documents
-    const result = await listDocuments(
+    const result = await listDocuments(client, 
       doctype,
       filters,
       ["count(name) as total_count"],
@@ -214,7 +216,7 @@ export async function getDocumentCount(
     // Fallback: make another request to get all IDs and count them
     // This is less efficient but should work if the count query fails
     console.error(`Count query didn't return expected result, using fallback method`);
-    const allIds = await listDocuments(doctype, filters, ["name"]);
+    const allIds = await listDocuments(client, doctype, filters, ["name"]);
     return allIds.length;
   } catch (error) {
     console.error(`Error getting document count for ${doctype}:`, error);
@@ -229,9 +231,9 @@ export async function getDocumentCount(
  * @param doctype The DocType name
  * @returns The naming series information or null if not applicable
  */
-export async function getNamingSeriesInfo(doctype: string): Promise<any> {
+export async function getNamingSeriesInfo(client: FrappeApp, doctype: string): Promise<any> {
   try {
-    const schema = await getDocTypeSchema(doctype);
+    const schema = await getDocTypeSchema(client, doctype);
     
     // Return naming information from the schema
     return {
@@ -291,9 +293,9 @@ export function formatFilters(filters: any): any {
  * @param fieldname The field name
  * @returns The field metadata or null if not found
  */
-export async function getFieldMetadata(doctype: string, fieldname: string): Promise<any | null> {
+export async function getFieldMetadata(client: FrappeApp, doctype: string, fieldname: string): Promise<any | null> {
   try {
-    const schema = await getDocTypeSchema(doctype);
+    const schema = await getDocTypeSchema(client, doctype);
     
     if (!schema || !schema.fields) {
       throw new Error(`Could not get schema for DocType ${doctype}`);
@@ -314,9 +316,9 @@ export async function getFieldMetadata(doctype: string, fieldname: string): Prom
  * @param doctype The DocType name
  * @returns Array of required field names and their metadata
  */
-export async function getRequiredFields(doctype: string): Promise<any[]> {
+export async function getRequiredFields(client: FrappeApp, doctype: string): Promise<any[]> {
   try {
-    const schema = await getDocTypeSchema(doctype);
+    const schema = await getDocTypeSchema(client, doctype);
     
     if (!schema || !schema.fields) {
       throw new Error(`Could not get schema for DocType ${doctype}`);

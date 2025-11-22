@@ -1,6 +1,6 @@
-import { frappe } from './api-client.js';
+import { FrappeApp } from "frappe-js-sdk";
 import { handleApiError } from './errors.js';
-import { callMethod } from './document-api.js';
+import { callMethod } from './document-api-parameterized.js';
 
 /**
  * Interface for app usage instructions
@@ -53,10 +53,11 @@ const doctypeInstructionsCache = new Map<string, DocTypeUsageInstructions>();
 
 /**
  * Get the app that a DocType belongs to
+ * @param client Frappe client instance
  * @param doctype The DocType name
  * @returns The app name, or null if not found
  */
-export async function getAppForDocType(doctype: string): Promise<string | null> {
+export async function getAppForDocType(client: FrappeApp, doctype: string): Promise<string | null> {
   try {
     // Check cache first
     if (doctypeAppCache.has(doctype)) {
@@ -64,13 +65,13 @@ export async function getAppForDocType(doctype: string): Promise<string | null> 
     }
 
     // Query Frappe to get the module for this DocType
-    const doctypeDoc = await frappe.db().getDoc('DocType', doctype);
+    const doctypeDoc = await client.db().getDoc('DocType', doctype);
     if (!doctypeDoc || !doctypeDoc.module) {
       return null;
     }
 
     // Query Frappe to get the app for this module
-    const moduleDoc = await frappe.db().getDoc('Module Def', doctypeDoc.module);
+    const moduleDoc = await client.db().getDoc('Module Def', doctypeDoc.module);
     if (!moduleDoc || !moduleDoc.app_name) {
       return null;
     }
@@ -78,7 +79,7 @@ export async function getAppForDocType(doctype: string): Promise<string | null> 
     // Cache the result
     const appName = moduleDoc.app_name;
     doctypeAppCache.set(doctype, appName);
-    
+
     return appName;
   } catch (error) {
     console.error(`Error getting app for DocType ${doctype}:`, error);
@@ -88,14 +89,15 @@ export async function getAppForDocType(doctype: string): Promise<string | null> 
 
 /**
  * Check if an app has a usage instructions API
+ * @param client Frappe client instance
  * @param appName The app name
  * @returns True if the app has a usage instructions API
  */
-export async function hasUsageInstructionsAPI(appName: string): Promise<boolean> {
+export async function hasUsageInstructionsAPI(client: FrappeApp, appName: string): Promise<boolean> {
   try {
     // Try to call the get_usage_instructions method
     // We'll use a dummy call with no parameters to check if the method exists
-    await callMethod(`${appName}.api_usage.get_usage_instructions`);
+    await callMethod(client, `${appName}.api_usage.get_usage_instructions`);
     return true;
   } catch (error) {
     // If we get a specific error about the method not existing, return false
@@ -104,7 +106,7 @@ export async function hasUsageInstructionsAPI(appName: string): Promise<boolean>
     if (errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
       return false;
     }
-    
+
     // If it's some other error, assume the method exists but had an issue
     return true;
   }
@@ -112,10 +114,11 @@ export async function hasUsageInstructionsAPI(appName: string): Promise<boolean>
 
 /**
  * Get usage instructions for an app
+ * @param client Frappe client instance
  * @param appName The app name
  * @returns The app usage instructions, or null if not available
  */
-export async function getAppUsageInstructions(appName: string): Promise<AppUsageInstructions | null> {
+export async function getAppUsageInstructions(client: FrappeApp, appName: string): Promise<AppUsageInstructions | null> {
   try {
     // Check cache first
     if (appInstructionsCache.has(appName)) {
@@ -123,17 +126,17 @@ export async function getAppUsageInstructions(appName: string): Promise<AppUsage
     }
 
     // Check if the app has a usage instructions API
-    const hasAPI = await hasUsageInstructionsAPI(appName);
+    const hasAPI = await hasUsageInstructionsAPI(client, appName);
     if (!hasAPI) {
       return null;
     }
 
     // Call the app's usage instructions API
-    const instructions = await callMethod(`${appName}.api_usage.get_usage_instructions`);
-    
+    const instructions = await callMethod(client, `${appName}.api_usage.get_usage_instructions`);
+
     // Cache the result
     appInstructionsCache.set(appName, instructions);
-    
+
     return instructions;
   } catch (error) {
     console.error(`Error getting usage instructions for app ${appName}:`, error);
@@ -143,10 +146,11 @@ export async function getAppUsageInstructions(appName: string): Promise<AppUsage
 
 /**
  * Get usage instructions for a DocType from its app
+ * @param client Frappe client instance
  * @param doctype The DocType name
  * @returns The DocType usage instructions, or null if not available
  */
-export async function getDocTypeUsageInstructions(doctype: string): Promise<DocTypeUsageInstructions | null> {
+export async function getDocTypeUsageInstructions(client: FrappeApp, doctype: string): Promise<DocTypeUsageInstructions | null> {
   try {
     // Check cache first
     if (doctypeInstructionsCache.has(doctype)) {
@@ -154,23 +158,23 @@ export async function getDocTypeUsageInstructions(doctype: string): Promise<DocT
     }
 
     // Get the app for this DocType
-    const appName = await getAppForDocType(doctype);
+    const appName = await getAppForDocType(client, doctype);
     if (!appName) {
       return null;
     }
 
     // Check if the app has a usage instructions API
-    const hasAPI = await hasUsageInstructionsAPI(appName);
+    const hasAPI = await hasUsageInstructionsAPI(client, appName);
     if (!hasAPI) {
       return null;
     }
 
     // Call the app's usage instructions API with the DocType
-    const instructions = await callMethod(`${appName}.api_usage.get_usage_instructions`, { doctype });
-    
+    const instructions = await callMethod(client, `${appName}.api_usage.get_usage_instructions`, { doctype });
+
     // Cache the result
     doctypeInstructionsCache.set(doctype, instructions);
-    
+
     return instructions;
   } catch (error) {
     console.error(`Error getting usage instructions for DocType ${doctype}:`, error);
@@ -195,9 +199,9 @@ export function clearIntrospectionCaches(): void {
  */
 export async function initializeAppIntrospection(): Promise<void> {
   console.error('Initializing app introspection...');
-  
+
   // Set up a timer to clear caches periodically (every hour)
   setInterval(clearIntrospectionCaches, 60 * 60 * 1000);
-  
+
   console.error('App introspection initialized');
 }
