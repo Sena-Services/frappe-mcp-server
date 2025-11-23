@@ -8,6 +8,9 @@
  * - Per-site config from site_config.json (5-minute cache, no polling)
  */
 
+// Load environment variables from .env file
+require('dotenv').config();
+
 const express = require('express');
 const { randomUUID } = require('crypto');
 

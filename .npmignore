@@ -1,0 +1,34 @@
+# Source files (TypeScript)
+src/
+
+# Development files
+tsconfig.json
+.gitignore
+REFACTORING.md
+
+# Test files
+test*.js
+test*.py
+
+# Environment files
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+frappe-mcp-server.log
+
+# Other
+RECONCILIATION_STATUS.md
