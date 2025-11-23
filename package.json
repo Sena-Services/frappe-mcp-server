@@ -2,25 +2,34 @@
   "name": "frappe-mcp-server",
   "version": "0.2.16",
   "description": "Enhanced Model Context Protocol server for Frappe Framework with comprehensive API instructions and helper tools",
-  "main": "multitenant-server.cjs",
+  "main": "mcp-server.cjs",
   "type": "module",
   "exports": {
-    ".": "./multitenant-server.cjs",
+    ".": "./mcp-server.cjs",
     "./lib": "./build/library.js"
   },
   "scripts": {
     "build": "tsc && cp -R src/server_hints build/server_hints",
-    "start": "node multitenant-server.cjs",
-    "dev": "node multitenant-server.cjs",
+    "start": "node mcp-server.cjs",
+    "dev": "node mcp-server.cjs",
     "test": "echo \"Error: no test specified\" && exit 1",
     "test-server": "node test-server.js",
     "test-tools": "node test-tools.js",
     "fixpkg": "npm pkg fix",
+    "prepublishOnly": "npm run build",
     "publish": "npm publish --access public"
   },
   "bin": {
-    "frappe-mcp-server": "multitenant-server.cjs"
+    "frappe-mcp-server": "mcp-server.cjs"
   },
+  "files": [
+    "build/",
+    "mcp-server.cjs",
+    "test-server.js",
+    "test-tools.js",
+    "package.json",
+    "README.md"
+  ],
   "keywords": [
     "frappe",
     "mcp",
@@ -34,6 +43,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.13.1",
     "axios": "^1.7.2",
+    "dotenv": "^17.2.3",
     "express": "^4.19.2",
     "frappe-js-sdk": "^1.7.0",
     "yargs": "^17.7.2"
