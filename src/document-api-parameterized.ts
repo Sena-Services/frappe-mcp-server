@@ -117,12 +117,16 @@ export async function listDocuments(
       orderByOption = { field, order };
     }
 
+    // Normalize limit: -1 or 0 means "get all records" (no limit)
+    // We pass undefined to omit the limit parameter entirely
+    const effectiveLimit = (limit === -1 || limit === 0) ? undefined : limit;
+
     const optionsForGetDocList = {
       fields: fields,
       filters: filters as any[],
       orderBy: orderByOption,
       limit_start: limit_start,
-      limit: limit
+      limit: effectiveLimit
     };
 
     const response = await client.db().getDocList(doctype, optionsForGetDocList as any);

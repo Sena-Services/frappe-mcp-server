@@ -10,6 +10,7 @@ import { handleHelperToolCall } from "./index-helpers.js";
 import { BLUEPRINT_TOOLS, handleBlueprintToolCall } from "./blueprint-operations.js";
 import { DOCTYPE_OPERATIONS_TOOLS, handleDoctypeOperationsToolCall } from "./doctype-operations.js";
 import { WORKFLOW_TOOLS, handleWorkflowToolCall } from "./workflow-operations.js";
+import { UI_TOOLS, handleUIToolCall } from "./ui-operations.js";
 import { validateApiCredentials } from './auth.js';
 import { isJSONRPCRequest } from "@modelcontextprotocol/sdk/types.js";
 
@@ -23,7 +24,7 @@ function createMcpServer(): Server {
     mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
         console.error("MCP Test: 'list_tools' request handler was triggered inside createMcpServer.");
         const tools = [
-        ...DOCUMENT_TOOLS, ...SCHEMA_TOOLS, ...HELPER_TOOLS, ...BLUEPRINT_TOOLS, ...DOCTYPE_OPERATIONS_TOOLS, ...WORKFLOW_TOOLS, { name: "ping", description: "A simple tool to check if the server is responding.", inputSchema: { type: "object", properties: {} } }] as Tool[];
+        ...DOCUMENT_TOOLS, ...SCHEMA_TOOLS, ...HELPER_TOOLS, ...BLUEPRINT_TOOLS, ...DOCTYPE_OPERATIONS_TOOLS, ...WORKFLOW_TOOLS, ...UI_TOOLS, { name: "ping", description: "A simple tool to check if the server is responding.", inputSchema: { type: "object", properties: {} } }] as Tool[];
         return { tools };
     });
     mcpServer.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
@@ -35,6 +36,7 @@ function createMcpServer(): Server {
         if (BLUEPRINT_TOOLS.find(tool => tool.name === name)) return await handleBlueprintToolCall(request);
         if (DOCTYPE_OPERATIONS_TOOLS.find(tool => tool.name === name)) return await handleDoctypeOperationsToolCall(request);
         if (WORKFLOW_TOOLS.find(tool => tool.name === name)) return await handleWorkflowToolCall(request);
+        if (UI_TOOLS.find(tool => tool.name === name)) return await handleUIToolCall(request);
         if (name === "ping") return { content: [{ type: "text", text: "pong" }], isError: false };
         return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
     });

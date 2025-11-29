@@ -15,6 +15,7 @@ import { HELPER_TOOLS } from './frappe-instructions.js';
 import { BLUEPRINT_TOOLS } from './blueprint-operations.js';
 import { DOCTYPE_OPERATIONS_TOOLS } from './doctype-operations.js';
 import { WORKFLOW_TOOLS } from './workflow-operations.js';
+import { UI_TOOLS } from './ui-operations.js';
 
 export interface SiteCredentials {
   url: string;
@@ -49,6 +50,7 @@ export function listTools() {
     ...BLUEPRINT_TOOLS,
     ...DOCTYPE_OPERATIONS_TOOLS,
     ...WORKFLOW_TOOLS,
+    ...UI_TOOLS,
     {
       name: "ping",
       description: "A simple tool to check if the server is responding.",
@@ -579,6 +581,28 @@ export async function executeTool(
         text: JSON.stringify(result, null, 2)
       }],
       isError: !result.success
+    };
+  }
+
+  // Handle UI operations
+  if (toolName === "update_preview_config") {
+    const result = await docApi.callMethod(
+      client,
+      "sentra_core.builder.ui_agent.update_preview_config_util",
+      {
+        instance_id: args.instance_id,
+        page_id: args.page_id,
+        config_json: args.config_json
+      }
+    );
+    // Result is wrapped in { message: { success, ... } }
+    const data = result?.message || result;
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(data, null, 2)
+      }],
+      isError: !data?.success
     };
   }
 
