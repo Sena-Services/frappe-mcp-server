@@ -155,14 +155,34 @@ export async function executeTool(
 
   // Handle schema operations
   if (toolName === "get_doctype_schema") {
-    const result = await schemaApi.getDocTypeSchema(client, args.doctype);
-    return {
-      content: [{
-        type: "text",
-        text: JSON.stringify(result, null, 2)
-      }],
-      isError: false
-    };
+    try {
+      const result = await schemaApi.getDocTypeSchema(client, args.doctype);
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result, null, 2)
+        }],
+        isError: false
+      };
+    } catch (error: any) {
+      // Return graceful error instead of throwing - allows agent to continue
+      const errorMessage = error?.message || String(error);
+      const is404 = errorMessage.includes('404') || errorMessage.includes('DoesNotExistError') || errorMessage.includes('not found');
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            error: true,
+            exists: false,
+            doctype: args.doctype,
+            message: is404
+              ? `DocType "${args.doctype}" does not exist. Check the exact DocType name.`
+              : `Error getting schema for "${args.doctype}": ${errorMessage}`
+          }, null, 2)
+        }],
+        isError: false  // Return false so agent can handle gracefully
+      };
+    }
   }
 
   if (toolName === "get_field_options") {
@@ -438,16 +458,127 @@ export async function executeTool(
     };
   }
 
-  // Handle workflow operations
-  if (["create_workflow", "update_workflow_state", "get_workflow_status", "list_workflow_states"].includes(toolName)) {
-    // These are handled via callMethod with appropriate backend methods
-    // For now, return a placeholder - will need proper implementation
+  // Handle workflow operations - Blueprint CRUD
+  if (toolName === "create_blueprint") {
+    const result = await docApi.callMethod(
+      client,
+      "sentra_core.builder.tools.workflow_tools.create_blueprint_util",
+      {
+        name: args.name,
+        triggers: args.triggers,
+        actions: args.actions,
+        description: args.description || null,
+        parameters: args.parameters || null
+      }
+    );
     return {
       content: [{
         type: "text",
-        text: `Workflow tool '${toolName}' called with args: ${JSON.stringify(args, null, 2)}`
+        text: JSON.stringify(result, null, 2)
       }],
-      isError: false
+      isError: !result.success
+    };
+  }
+
+  if (toolName === "read_blueprint") {
+    const result = await docApi.callMethod(
+      client,
+      "sentra_core.builder.tools.workflow_tools.read_blueprint_util",
+      {
+        blueprint_id: args.blueprint_id
+      }
+    );
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result, null, 2)
+      }],
+      isError: !result.success
+    };
+  }
+
+  if (toolName === "update_blueprint") {
+    const result = await docApi.callMethod(
+      client,
+      "sentra_core.builder.tools.workflow_tools.update_blueprint_util",
+      {
+        blueprint_id: args.blueprint_id,
+        triggers: args.triggers || null,
+        actions: args.actions || null,
+        description: args.description || null,
+        parameters: args.parameters || null
+      }
+    );
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result, null, 2)
+      }],
+      isError: !result.success
+    };
+  }
+
+  if (toolName === "delete_blueprint") {
+    const result = await docApi.callMethod(
+      client,
+      "sentra_core.builder.tools.workflow_tools.delete_blueprint_util",
+      {
+        blueprint_id: args.blueprint_id
+      }
+    );
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result, null, 2)
+      }],
+      isError: !result.success
+    };
+  }
+
+  if (toolName === "validate_blueprint") {
+    const result = await docApi.callMethod(
+      client,
+      "sentra_core.builder.tools.workflow_tools.validate_blueprint_util",
+      {
+        blueprint_json: args.blueprint_json
+      }
+    );
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result, null, 2)
+      }],
+      isError: !result.success
+    };
+  }
+
+  if (toolName === "get_available_events") {
+    const result = await docApi.callMethod(
+      client,
+      "sentra_core.builder.tools.workflow_tools.get_available_events_util",
+      {}
+    );
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result, null, 2)
+      }],
+      isError: !result.success
+    };
+  }
+
+  if (toolName === "get_available_actions") {
+    const result = await docApi.callMethod(
+      client,
+      "sentra_core.builder.tools.workflow_tools.get_available_actions_util",
+      {}
+    );
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result, null, 2)
+      }],
+      isError: !result.success
     };
   }
 
