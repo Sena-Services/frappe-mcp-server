@@ -590,7 +590,7 @@ export async function executeTool(
       client,
       "sentra_core.builder.ui_agent.update_preview_config_util",
       {
-        instance_id: args.instance_id,
+        erp_builder_name: args.erp_builder_name,
         page_id: args.page_id,
         config_json: args.config_json
       }

@@ -19,9 +19,9 @@ export const UI_TOOLS: Tool[] = [
         inputSchema: {
             type: "object",
             properties: {
-                instance_id: {
+                erp_builder_name: {
                     type: "string",
-                    description: "ERP Builder Instance ID (required for context)"
+                    description: "ERP Builder document name (e.g., 'My App Builder')"
                 },
                 page_id: {
                     type: "string",
@@ -32,7 +32,7 @@ export const UI_TOOLS: Tool[] = [
                     description: "JSON string containing the complete UI configuration for the page"
                 }
             },
-            required: ["instance_id", "page_id", "config_json"]
+            required: ["erp_builder_name", "page_id", "config_json"]
         }
     }
 ];
@@ -63,9 +63,9 @@ export async function handleUIToolCall(request: CallToolRequest, credentials?: F
         console.error(`Handling UI tool: ${name} with args:`, args);
 
         if (name === "update_preview_config") {
-            if (!args || !args.instance_id || !args.page_id || !args.config_json) {
+            if (!args || !args.erp_builder_name || !args.page_id || !args.config_json) {
                 return {
-                    content: [{ type: "text", text: JSON.stringify({ success: false, error: "Missing required arguments: instance_id, page_id, and config_json are required" }) }],
+                    content: [{ type: "text", text: JSON.stringify({ success: false, error: "Missing required arguments: erp_builder_name, page_id, and config_json are required" }) }],
                     isError: true
                 };
             }
@@ -74,7 +74,7 @@ export async function handleUIToolCall(request: CallToolRequest, credentials?: F
                 client,
                 "sentra_core.builder.ui_agent.update_preview_config_util",
                 {
-                    instance_id: args.instance_id,
+                    erp_builder_name: args.erp_builder_name,
                     page_id: args.page_id,
                     config_json: args.config_json
                 }
