@@ -585,12 +585,29 @@ export async function executeTool(
   }
 
   // Handle UI operations
+  if (toolName === "get_preview_config") {
+    const result = await docApi.callMethod(
+      client,
+      "sentra_core.builder.ui_agent.get_preview_config",
+      {
+        page_id: args.page_id
+      }
+    );
+    const data = result?.message || result;
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(data, null, 2)
+      }],
+      isError: !data?.success
+    };
+  }
+
   if (toolName === "update_preview_config") {
     const result = await docApi.callMethod(
       client,
       "sentra_core.builder.ui_agent.update_preview_config_util",
       {
-        erp_builder_name: args.erp_builder_name,
         page_id: args.page_id,
         config_json: args.config_json
       }

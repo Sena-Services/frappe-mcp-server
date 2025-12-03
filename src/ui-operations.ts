@@ -6,6 +6,7 @@
  * UI preview configurations programmatically via AI agents.
  *
  * MCP calls these methods:
+ * - sentra_core.builder.ui_agent.get_preview_config
  * - sentra_core.builder.ui_agent.update_preview_config_util
  */
 
@@ -14,15 +15,25 @@ import { callMethod, createFrappeClient, FrappeClientConfig } from "./frappe-api
 
 export const UI_TOOLS: Tool[] = [
     {
-        name: "update_preview_config",
-        description: "Create or update a UI preview configuration for a specific page. Use this to save UI layouts, component configurations, and preview settings for the builder.",
+        name: "get_preview_config",
+        description: "Get the UI preview configuration for a specific page. Use this to fetch the current UI layout configuration before making edits.",
         inputSchema: {
             type: "object",
             properties: {
-                erp_builder_name: {
+                page_id: {
                     type: "string",
-                    description: "ERP Builder document name (e.g., 'My App Builder')"
-                },
+                    description: "Unique ID for the page (e.g., 'schools', 'bug-tracker-dashboard', 'travel-dashboard-analytics')"
+                }
+            },
+            required: ["page_id"]
+        }
+    },
+    {
+        name: "update_preview_config",
+        description: "Create or update a UI preview configuration for a specific page. Use this to save UI layouts, component configurations, and preview settings. ALWAYS fetch the existing config first using get_preview_config before updating.",
+        inputSchema: {
+            type: "object",
+            properties: {
                 page_id: {
                     type: "string",
                     description: "Unique ID for the page being configured (e.g., 'schools', 'products', 'dashboard')"
@@ -32,7 +43,7 @@ export const UI_TOOLS: Tool[] = [
                     description: "JSON string containing the complete UI configuration for the page"
                 }
             },
-            required: ["erp_builder_name", "page_id", "config_json"]
+            required: ["page_id", "config_json"]
         }
     }
 ];
@@ -62,10 +73,33 @@ export async function handleUIToolCall(request: CallToolRequest, credentials?: F
     try {
         console.error(`Handling UI tool: ${name} with args:`, args);
 
-        if (name === "update_preview_config") {
-            if (!args || !args.erp_builder_name || !args.page_id || !args.config_json) {
+        if (name === "get_preview_config") {
+            if (!args || !args.page_id) {
                 return {
-                    content: [{ type: "text", text: JSON.stringify({ success: false, error: "Missing required arguments: erp_builder_name, page_id, and config_json are required" }) }],
+                    content: [{ type: "text", text: JSON.stringify({ success: false, error: "Missing required argument: page_id" }) }],
+                    isError: true
+                };
+            }
+
+            const result = await callMethod(
+                client,
+                "sentra_core.builder.ui_agent.get_preview_config",
+                {
+                    page_id: args.page_id
+                }
+            );
+
+            const data = result?.message || result;
+            return {
+                content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+                isError: !data?.success
+            };
+        }
+
+        if (name === "update_preview_config") {
+            if (!args || !args.page_id || !args.config_json) {
+                return {
+                    content: [{ type: "text", text: JSON.stringify({ success: false, error: "Missing required arguments: page_id and config_json are required" }) }],
                     isError: true
                 };
             }
@@ -74,13 +108,11 @@ export async function handleUIToolCall(request: CallToolRequest, credentials?: F
                 client,
                 "sentra_core.builder.ui_agent.update_preview_config_util",
                 {
-                    erp_builder_name: args.erp_builder_name,
                     page_id: args.page_id,
                     config_json: args.config_json
                 }
             );
 
-            // Result is wrapped in { message: { success, ... } }
             const data = result?.message || result;
             return {
                 content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
