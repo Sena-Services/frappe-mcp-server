@@ -35,23 +35,37 @@ Alternatively, run directly with npx:
 npx frappe-mcp-server
 ```
 
-(no installation needed)
-
 ## Configuration
 
-The server is configured using environment variables:
+The server uses a multi-tenant configuration file (`mcp-sites.json`) to manage credentials for one or more Frappe sites.
 
-- `FRAPPE_URL`: The URL of your Frappe instance (default: `http://localhost:8000`)
-- `FRAPPE_API_KEY`: Your Frappe API key (**required**)
-- `FRAPPE_API_SECRET`: Your Frappe API secret (**required**)
+### Required Environment Variables
 
-> **Important**: API key/secret authentication is the only supported authentication method. Both `FRAPPE_API_KEY` and `FRAPPE_API_SECRET` must be provided for the server to function properly. Username/password authentication is not supported.
+- `MCP_PORT`: Port to run the server on (default: `4000`)
+- `SITES_CONFIG_PATH`: Path to the `mcp-sites.json` configuration file
 
-### Authentication
+### Site Configuration File
 
-This MCP server **only supports API key/secret authentication** via the Frappe REST API. Username/password authentication is not supported.
+Create a `mcp-sites.json` file with your Frappe site credentials:
 
-#### Getting API Credentials
+```json
+{
+  "sites": {
+    "localhost": {
+      "url": "http://localhost:8000",
+      "api_key": "your_api_key",
+      "api_secret": "your_api_secret"
+    },
+    "production.example.com": {
+      "url": "https://production.example.com",
+      "api_key": "your_api_key",
+      "api_secret": "your_api_secret"
+    }
+  }
+}
+```
+
+### Getting API Credentials
 
 To get API credentials from your Frappe instance:
 
@@ -60,92 +74,83 @@ To get API credentials from your Frappe instance:
 3. Click "Generate Keys"
 4. Copy the API Key and API Secret
 
-#### Authentication Troubleshooting
-
-If you encounter authentication errors:
-
-1. Verify that both `FRAPPE_API_KEY` and `FRAPPE_API_SECRET` environment variables are set correctly
-2. Ensure the API key is active and not expired in your Frappe instance
-3. Check that the user associated with the API key has the necessary permissions
-4. Verify the Frappe URL is correct and accessible
-
-The server provides detailed error messages to help diagnose authentication issues.
-
 ## Usage
 
-### Single-Tenant Mode (Development)
-
-For development with a single Frappe site:
-
-```bash
-FRAPPE_URL=https://your-frappe-instance.com \
-FRAPPE_API_KEY=your_api_key \
-FRAPPE_API_SECRET=your_api_secret \
-npx frappe-mcp-server
-```
-
-### Multi-Tenant Mode (Production)
-
-For production environments with multiple Frappe sites:
-
-1. Create a `mcp-sites.json` configuration file:
-
-```json
-{
-  "sites": {
-    "site1.example.com": {
-      "url": "https://site1.example.com",
-      "api_key": "your_api_key",
-      "api_secret": "your_api_secret"
-    },
-    "site2.example.com": {
-      "url": "https://site2.example.com",
-      "api_key": "your_api_key",
-      "api_secret": "your_api_secret"
-    }
-  }
-}
-```
-
-2. Start the multi-tenant server:
+### Starting the Server
 
 ```bash
 MCP_PORT=4000 \
 SITES_CONFIG_PATH=/path/to/mcp-sites.json \
-node multitenant-server.cjs
+node mcp-server.cjs
 ```
 
-The multi-tenant server includes:
+Or using npm scripts:
+
+```bash
+npm start
+```
+
+### Server Features
+
+- **Multi-tenant support**: Each site has isolated credentials and sessions
 - **Session management**: Persistent sessions across requests for better performance
 - **Config caching**: 5-minute cache with on-demand loading (no polling)
-- **Site isolation**: Each site has isolated credentials and sessions
 - **Health endpoints**: `/health`, `/sites`, `/sessions` for monitoring
 
-### Integrating with AI Assistants
+### API Endpoints
 
-To use this MCP server with an AI assistant, you need to configure the assistant to connect to this server. The exact configuration depends on the AI assistant platform you're using.
+- `POST /mcp/:siteName` - Main MCP endpoint (siteName in URL)
+- `POST /mcp` - Main MCP endpoint (siteName in `X-Frappe-Site-Name` header)
+- `GET /health` - Health check
+- `GET /sites` - List available sites
+- `GET /sessions` - List active sessions
 
-For Claude, add the following to your MCP settings configuration file:
+### Making Requests
 
-```json
-{
-  "mcpServers": {
-    "frappe": {
-      "command": "npx",
-      "args": ["frappe-mcp-server"], // Assumes frappe-mcp-server is in MCP server path
-      "env": {
-        "FRAPPE_URL": "https://your-frappe-instance.com",
-        "FRAPPE_API_KEY": "your_api_key", // REQUIRED
-        "FRAPPE_API_SECRET": "your_api_secret" // REQUIRED
-      },
-      "disabled": false,
-      "alwaysAllow": []
-    }
-  }
-}
+Specify the site in one of these ways:
+1. **URL parameter**: `POST /mcp/localhost`
+2. **Header**: `X-Frappe-Site-Name: localhost`
+
+Example with curl:
+```bash
+curl -X POST http://localhost:4000/mcp/localhost \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "method": "initialize", "params": {...}, "id": 1}'
 ```
 
-> **Note**: Both `FRAPPE_API_KEY` and `FRAPPE_API_SECRET` environment variables are required. The server will start without them but most operations will fail with authentication errors.
+### Integrating with LangChain/LangGraph
+
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient({
+    "frappe": {
+        "transport": "streamable_http",
+        "url": "http://127.0.0.1:4000/mcp",
+        "headers": {"X-Frappe-Site-Name": "localhost"}
+    }
+})
+
+tools = await client.get_tools()
+```
+
+### Integrating with Google ADK
+
+```python
+from google.adk.tools.mcp_tool import MCPToolset, StreamableHTTPConnectionParams
+
+toolset = MCPToolset(
+    connection_params=StreamableHTTPConnectionParams(
+        url="http://127.0.0.1:4000/mcp",
+        headers={
+            "X-Frappe-Site-Name": "localhost",
+            "Authorization": "token api_key:api_secret"
+        }
+    )
+)
+
+tools = await toolset.get_tools()
+```
 
 ## Available Tools
 
@@ -156,12 +161,12 @@ For Claude, add the following to your MCP settings configuration file:
 - `update_document`: Update an existing document in Frappe
 - `delete_document`: Delete a document from Frappe
 - `list_documents`: List documents from Frappe with filters
+- `call_method`: Execute a whitelisted Frappe method
 
 ### Schema Operations
 
 - `get_doctype_schema`: Get the complete schema for a DocType including field definitions, validations, and linked DocTypes
 - `get_field_options`: Get available options for a Link or Select field
-- `get_frappe_usage_info`: Get combined information about a DocType or workflow, including schema metadata, static hints, and app-provided usage guidance
 
 ### Helper Tools
 
@@ -173,30 +178,22 @@ For Claude, add the following to your MCP settings configuration file:
 - `get_document_count`: Get a count of documents matching filters
 - `get_naming_info`: Get the naming series information for a DocType
 - `get_required_fields`: Get a list of required fields for a DocType
-- `get_api_instructions`: Get detailed instructions for using the Frappe API
 
-## Available Resources
+### DocType Operations (for custom apps)
 
-### Schema Resources
+- `create_doctype`: Create a new custom DocType
+- `create_child_table`: Create a child table DocType
+- `add_fields_to_doctype`: Add fields to an existing DocType
+- `delete_doctype`: Delete a custom DocType
 
-- `schema://{doctype}`: Schema information for a DocType
-- `schema://{doctype}/{fieldname}/options`: Available options for a Link or Select field
-- `schema://modules`: List of all modules in the system
-- `schema://doctypes`: List of all DocTypes in the system
+### Workflow/Blueprint Operations
 
-## Features
-
-### Usage Information Enhancement
-
-The server provides comprehensive usage information by combining three sources:
-
-1. **Frappe Metadata**: Schema information retrieved directly from the Frappe API
-2. **Static Hints**: Supplementary context stored in JSON files within the `static_hints/` directory
-3. **Custom App Introspection**: Usage instructions provided directly by custom Frappe apps
-
-This enhancement enables AI assistants to better understand Frappe modules, making them more effective at assisting users with Frappe-based applications.
-
-For more details, see [Usage Information Enhancement](docs/usage_info_enhancement.md).
+- `create_blueprint`: Create a new workflow blueprint
+- `read_blueprint`: Get blueprint details
+- `update_blueprint`: Update an existing blueprint
+- `delete_blueprint`: Delete a blueprint
+- `validate_blueprint`: Validate blueprint JSON
+- `execute_blueprint`: Execute a blueprint manually
 
 ## Examples
 
@@ -204,7 +201,7 @@ For more details, see [Usage Information Enhancement](docs/usage_info_enhancemen
 
 ```javascript
 // Example of using the create_document tool
-const result = await useToolWithMcp("frappe", "create_document", {
+const result = await mcp.call("create_document", {
   doctype: "Customer",
   values: {
     customer_name: "John Doe",
@@ -219,10 +216,10 @@ const result = await useToolWithMcp("frappe", "create_document", {
 
 ```javascript
 // Example of using the get_document tool
-const customer = await useToolWithMcp("frappe", "get_document", {
+const customer = await mcp.call("get_document", {
   doctype: "Customer",
   name: "CUST-00001",
-  fields: ["customer_name", "customer_type", "email_id"], // Optional: specific fields
+  fields: ["customer_name", "customer_type", "email_id"],
 });
 ```
 
@@ -230,7 +227,7 @@ const customer = await useToolWithMcp("frappe", "get_document", {
 
 ```javascript
 // Example of using the list_documents tool with filters
-const customers = await useToolWithMcp("frappe", "list_documents", {
+const customers = await mcp.call("list_documents", {
   doctype: "Customer",
   filters: {
     customer_type: "Individual",
@@ -239,50 +236,6 @@ const customers = await useToolWithMcp("frappe", "list_documents", {
   fields: ["name", "customer_name", "email_id"],
   limit: 10,
   order_by: "creation desc",
-});
-```
-
-### Finding DocTypes
-
-```javascript
-// Example of using the find_doctypes tool
-const salesDocTypes = await useToolWithMcp("frappe", "find_doctypes", {
-  search_term: "Sales",
-  module: "Selling",
-  is_table: false,
-});
-```
-
-### Getting Required Fields
-
-```javascript
-// Example of using the get_required_fields tool
-const requiredFields = await useToolWithMcp("frappe", "get_required_fields", {
-  doctype: "Sales Order",
-});
-```
-
-### Getting API Instructions
-
-```javascript
-// Example of using the get_api_instructions tool
-const instructions = await useToolWithMcp("frappe", "get_api_instructions", {
-  category: "DOCUMENT_OPERATIONS",
-  operation: "CREATE",
-});
-```
-
-### Getting Usage Information
-
-```javascript
-// Example of using the get_frappe_usage_info tool
-const salesOrderInfo = await useToolWithMcp("frappe", "get_frappe_usage_info", {
-  doctype: "Sales Order",
-});
-
-// Example of getting workflow information
-const workflowInfo = await useToolWithMcp("frappe", "get_frappe_usage_info", {
-  workflow: "Quote to Sales Order Conversion",
 });
 ```
 
@@ -314,6 +267,46 @@ Each error includes:
 4. **Validate Before Creating**: Use `get_required_fields` to ensure you have all required fields before creating a document.
 
 5. **Check Existence**: Use `check_document_exists` before updating or deleting to ensure the document exists.
+
+## Architecture
+
+The server uses a multi-tenant architecture:
+
+```
+                    ┌─────────────────────┐
+                    │   mcp-server.cjs    │
+                    │  (Express server)   │
+                    └──────────┬──────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              │                │                │
+              ▼                ▼                ▼
+    ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+    │   ConfigManager │ │  MCP Server     │ │  Session Pool   │
+    │ (mcp-sites.json)│ │  (shared)       │ │  (per-site)     │
+    └─────────────────┘ └─────────────────┘ └─────────────────┘
+              │                │                │
+              └────────────────┼────────────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │     library.ts      │
+                    │ (executeTool, etc.) │
+                    └──────────┬──────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              │                │                │
+              ▼                ▼                ▼
+    ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+    │   Document API  │ │   Schema API    │ │   Frappe API    │
+    │ (parameterized) │ │ (parameterized) │ │   (helpers)     │
+    └─────────────────┘ └─────────────────┘ └─────────────────┘
+```
+
+- **ConfigManager**: Loads site credentials from `mcp-sites.json` with 5-minute caching
+- **MCP Server**: Single global instance shared across all sessions
+- **Session Pool**: Per-site sessions with transport caching
+- **library.ts**: Core tool execution logic with credentials injection
 
 ## License
 

@@ -288,6 +288,45 @@ app.post(['/mcp', '/mcp/:siteName'], async (req, res) => {
 });
 
 // ============================================================================
+// SESSION TERMINATION (DELETE)
+// ============================================================================
+
+app.delete(['/mcp', '/mcp/:siteName'], (req, res) => {
+  const siteName = req.params.siteName || req.headers['x-frappe-site-name'];
+  const sessionId = req.headers['mcp-session-id'];
+
+  if (!sessionId) {
+    return res.status(204).send();
+  }
+
+  // Find and cleanup session
+  const cacheKey = siteName ? `${siteName}:${sessionId}` : null;
+  let session = cacheKey ? sessions[cacheKey] : null;
+  let foundKey = cacheKey;
+
+  // Fallback: search by sessionId suffix if not found
+  if (!session) {
+    for (const [key, s] of Object.entries(sessions)) {
+      if (key.endsWith(`:${sessionId}`)) {
+        session = s;
+        foundKey = key;
+        break;
+      }
+    }
+  }
+
+  if (session) {
+    console.log(`[MCP] Session terminated: ${foundKey}`);
+    try {
+      session.transport.close();
+    } catch (e) { /* ignore */ }
+    delete sessions[foundKey];
+  }
+
+  return res.status(204).send();
+});
+
+// ============================================================================
 // SESSION CLEANUP JOB
 // ============================================================================
 
