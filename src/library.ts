@@ -387,6 +387,15 @@ export async function executeTool(
   if (toolName === "explore_system") {
     console.error(`[explore_system] Called with args: ${JSON.stringify(args)}`);
 
+    // FIX 4: Clear Frappe cache before exploration to ensure fresh data
+    // This is critical when DocTypes have been created/modified in parallel
+    try {
+      await docApi.callMethod(client, "frappe.clear_cache", {});
+      console.error(`[explore_system] Cache cleared successfully`);
+    } catch (cacheError) {
+      console.error(`[explore_system] Cache clear failed (non-fatal):`, cacheError);
+    }
+
     const doctypesToCheck: string[] = args.doctypes || [];
     const documentsToCheck: Array<{doctype: string, name: string}> = args.documents || [];
     const blueprintsToCheck: string[] = args.blueprints || [];
@@ -416,13 +425,18 @@ export async function executeTool(
         try {
           // First, verify DocType actually exists in database (not just in cache)
           // Use frappe.client.get_count which is cache-free
+          // FIX: frappe-js-sdk returns {message: <count>}, not the count directly
           const countResult = await client.call().get('frappe.client.get_count', {
             doctype: 'DocType',
             filters: { name: doctype }
           });
-          const exists = (countResult && countResult > 0);
+          // Extract count from response - handle both {message: N} and direct N formats
+          const count = typeof countResult === 'object' && countResult !== null
+            ? (countResult.message ?? countResult.data ?? 0)
+            : (typeof countResult === 'number' ? countResult : 0);
+          const exists = count > 0;
 
-          console.error(`[explore_system] DocType ${doctype} DB exists check: ${exists}`);
+          console.error(`[explore_system] DocType ${doctype} DB exists check: ${exists} (raw: ${JSON.stringify(countResult)}, parsed count: ${count})`);
 
           if (!exists) {
             results.doctypes[doctype] = { exists: false };
