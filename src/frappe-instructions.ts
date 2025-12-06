@@ -625,6 +625,75 @@ export const HELPER_TOOLS = [
     }
   },
   {
+    name: "explore_system",
+    description: "MASTER EXPLORATION TOOL: Check current system state in ONE call. Batch-checks DocTypes (with schema), documents, blueprints, modules, and more. Use this before planning to understand what exists vs what needs to be created.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        doctypes: {
+          type: "array",
+          items: { type: "string" },
+          description: "DocType names to check existence and get schema (e.g., ['Customer', 'Order'])"
+        },
+        documents: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              doctype: { type: "string" },
+              name: { type: "string" }
+            },
+            required: ["doctype", "name"]
+          },
+          description: "Specific documents to check existence (e.g., [{doctype: 'User', name: 'admin'}])"
+        },
+        blueprints: {
+          type: "array",
+          items: { type: "string" },
+          description: "Blueprint names to check (e.g., ['On Customer Create'])"
+        },
+        list_queries: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              doctype: { type: "string" },
+              filters: { type: "object" },
+              limit: { type: "number" }
+            },
+            required: ["doctype"]
+          },
+          description: "List documents matching filters (e.g., [{doctype: 'DocType', filters: {module: 'Sentra Core'}}])"
+        },
+        find_doctypes: {
+          type: "string",
+          description: "Pattern to search for DocTypes (e.g., 'Customer' finds Customer, Customer Group, etc.)"
+        },
+        modules: {
+          type: "boolean",
+          description: "Set true to list all available modules"
+        },
+        doctypes_in_module: {
+          type: "string",
+          description: "Module name to list all DocTypes in (e.g., 'Sentra Core')"
+        },
+        count_queries: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              doctype: { type: "string" },
+              filters: { type: "object" }
+            },
+            required: ["doctype"]
+          },
+          description: "Count documents (e.g., [{doctype: 'Customer'}, {doctype: 'Order', filters: {status: 'Open'}}])"
+        }
+      },
+      required: []
+    }
+  },
+  {
     name: "send_whatsapp_message",
     description: "Send a WhatsApp message directly using phone number. Supports text, images, documents, videos, and audio files.",
     inputSchema: {

@@ -36,7 +36,15 @@ export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
                             label: { type: "string", description: "Human-readable label" },
                             reqd: { type: "number", description: "Required field (0 or 1)", default: 0 },
                             unique: { type: "number", description: "Unique field (0 or 1)", default: 0 },
-                            options: { type: "string", description: "Options for Select/Link fields", default: "" }
+                            options: { type: "string", description: "Options for Select/Link fields", default: "" },
+                            read_only: { type: "number", description: "Read-only field - cannot be edited in forms (0 or 1)", default: 0 },
+                            hidden: { type: "number", description: "Hidden field - not visible in UI (0 or 1)", default: 0 },
+                            default: { type: "string", description: "Default value for the field" },
+                            description: { type: "string", description: "Field help text shown below the field" },
+                            in_list_view: { type: "number", description: "Show in list view (0 or 1)", default: 0 },
+                            in_standard_filter: { type: "number", description: "Show in standard filters (0 or 1)", default: 0 },
+                            bold: { type: "number", description: "Bold label (0 or 1)", default: 0 },
+                            allow_on_submit: { type: "number", description: "Allow editing after submit (0 or 1)", default: 0 }
                         },
                         required: ["fieldname", "fieldtype", "label"]
                     }
@@ -90,7 +98,11 @@ export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
                 },
                 parent_field_label: {
                     type: "string",
-                    description: "Label for the field in parent DocType (optional, auto-generated if not provided)"
+                    description: "Label for the Table field in parent DocType (optional, auto-generated from child_doctype_name if not provided)"
+                },
+                parent_fieldname: {
+                    type: "string",
+                    description: "Fieldname for the Table field in parent DocType (e.g., 'milestones', 'attachments'). Optional - if not provided, derived from child_doctype_name (e.g., 'Project Milestone' → 'project_milestone')"
                 }
             },
             required: ["parent_doctype", "child_doctype_name", "child_fields"]

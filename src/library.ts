@@ -383,6 +383,264 @@ export async function executeTool(
     };
   }
 
+  // Handle explore_system - MASTER exploration tool
+  if (toolName === "explore_system") {
+    console.error(`[explore_system] Called with args: ${JSON.stringify(args)}`);
+
+    const doctypesToCheck: string[] = args.doctypes || [];
+    const documentsToCheck: Array<{doctype: string, name: string}> = args.documents || [];
+    const blueprintsToCheck: string[] = args.blueprints || [];
+    const listQueries: Array<{doctype: string, filters?: any, limit?: number}> = args.list_queries || [];
+    const findDoctypesPattern: string | undefined = args.find_doctypes;
+    const listModules: boolean = args.modules || false;
+    const doctypesInModule: string | undefined = args.doctypes_in_module;
+    const countQueries: Array<{doctype: string, filters?: any}> = args.count_queries || [];
+
+    const results: Record<string, any> = {
+      doctypes: {},
+      documents: {},
+      blueprints: {},
+      lists: {},
+      modules: null,
+      doctypesInModule: null,
+      foundDoctypes: null,
+      counts: {}
+    };
+
+    // Run all checks in parallel
+    await Promise.all([
+      // 1. Check DocTypes (with schema)
+      // IMPORTANT: First check if DocType exists in DB using frappe.db.exists
+      // This avoids cache issues where getdoctype returns stale data for deleted DocTypes
+      ...doctypesToCheck.map(async (doctype) => {
+        try {
+          // First, verify DocType actually exists in database (not just in cache)
+          // Use frappe.client.get_count which is cache-free
+          const countResult = await client.call().get('frappe.client.get_count', {
+            doctype: 'DocType',
+            filters: { name: doctype }
+          });
+          const exists = (countResult && countResult > 0);
+
+          console.error(`[explore_system] DocType ${doctype} DB exists check: ${exists}`);
+
+          if (!exists) {
+            results.doctypes[doctype] = { exists: false };
+            return;
+          }
+
+          // DocType exists in DB, now get schema
+          const schema = await schemaApi.getDocTypeSchema(client, doctype);
+          const requiredFields = schema.fields
+            .filter((f: any) => f.reqd || f.required)
+            .map((f: any) => ({ name: f.fieldname, type: f.fieldtype }));
+          const linkFields = schema.fields
+            .filter((f: any) => f.fieldtype === "Link")
+            .map((f: any) => ({ name: f.fieldname, target: f.options }));
+          const tableFields = schema.fields
+            .filter((f: any) => f.fieldtype === "Table")
+            .map((f: any) => ({ name: f.fieldname, childTable: f.options }));
+
+          results.doctypes[doctype] = {
+            exists: true,
+            isTable: schema.istable || false,
+            isSingle: schema.issingle || false,
+            isCustom: schema.custom || false,
+            module: schema.module,
+            autoname: schema.autoname,
+            fieldCount: schema.fields.length,
+            requiredFields,
+            linkFields,
+            tableFields
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error checking ${doctype}:`, error.message);
+          results.doctypes[doctype] = { exists: false };
+        }
+      }),
+
+      // 2. Check specific documents
+      ...documentsToCheck.map(async (doc) => {
+        const key = `${doc.doctype}:${doc.name}`;
+        try {
+          const document = await docApi.getDocument(client, doc.doctype, doc.name);
+          results.documents[key] = {
+            exists: true,
+            doctype: doc.doctype,
+            name: doc.name,
+            preview: Object.fromEntries(
+              Object.entries(document)
+                .filter(([k]) => !k.startsWith('_') && !['doctype', 'owner', 'creation', 'modified', 'modified_by', 'docstatus', 'idx'].includes(k))
+                .slice(0, 10)
+            )
+          };
+        } catch (error: any) {
+          results.documents[key] = { exists: false, doctype: doc.doctype, name: doc.name };
+        }
+      }),
+
+      // 3. Check blueprints
+      ...blueprintsToCheck.map(async (bpName) => {
+        try {
+          const bp = await docApi.getDocument(client, "BL Blueprint", bpName);
+          results.blueprints[bpName] = {
+            exists: true,
+            name: bp.name,
+            description: bp.blueprint_description,
+            isActive: bp.is_active
+          };
+        } catch (error: any) {
+          results.blueprints[bpName] = { exists: false };
+        }
+      }),
+
+      // 4. List queries
+      ...listQueries.map(async (query, idx) => {
+        const key = `${query.doctype}_query_${idx}`;
+        try {
+          const docs = await docApi.listDocuments(
+            client,
+            query.doctype,
+            query.filters,
+            ["name"],
+            query.limit || 20
+          );
+          results.lists[key] = {
+            doctype: query.doctype,
+            filters: query.filters,
+            count: docs.length,
+            names: docs.map((d: any) => d.name)
+          };
+        } catch (error: any) {
+          results.lists[key] = {
+            doctype: query.doctype,
+            error: error?.message || "Query failed"
+          };
+        }
+      }),
+
+      // 5. Find DocTypes by pattern
+      (async () => {
+        if (findDoctypesPattern) {
+          try {
+            const found = await frappeHelpers.findDocTypes(client, findDoctypesPattern, { limit: 30 });
+            results.foundDoctypes = found.map((d: any) => ({
+              name: d.name,
+              module: d.module,
+              isTable: d.istable,
+              isCustom: d.custom
+            }));
+          } catch (error: any) {
+            results.foundDoctypes = { error: error?.message || "Search failed" };
+          }
+        }
+      })(),
+
+      // 6. List all modules
+      (async () => {
+        if (listModules) {
+          try {
+            const modules = await schemaApi.getAllModules(client);
+            results.modules = modules.map((m: any) => m.name || m);
+          } catch (error: any) {
+            results.modules = { error: error?.message || "Failed to list modules" };
+          }
+        }
+      })(),
+
+      // 7. List DocTypes in a specific module
+      (async () => {
+        if (doctypesInModule) {
+          try {
+            const docs = await docApi.listDocuments(
+              client,
+              "DocType",
+              { module: doctypesInModule },
+              ["name", "istable", "issingle", "custom"],
+              100
+            );
+            results.doctypesInModule = {
+              module: doctypesInModule,
+              count: docs.length,
+              doctypes: docs.map((d: any) => ({
+                name: d.name,
+                isTable: d.istable,
+                isSingle: d.issingle,
+                isCustom: d.custom
+              }))
+            };
+          } catch (error: any) {
+            results.doctypesInModule = { module: doctypesInModule, error: error?.message || "Query failed" };
+          }
+        }
+      })(),
+
+      // 8. Count queries
+      ...countQueries.map(async (query) => {
+        const key = query.filters ? `${query.doctype}:${JSON.stringify(query.filters)}` : query.doctype;
+        try {
+          const docs = await docApi.listDocuments(
+            client,
+            query.doctype,
+            query.filters,
+            ["name"],
+            0  // We just need the count
+          );
+          results.counts[key] = {
+            doctype: query.doctype,
+            filters: query.filters,
+            count: docs.length
+          };
+        } catch (error: any) {
+          results.counts[key] = {
+            doctype: query.doctype,
+            error: error?.message || "Count failed"
+          };
+        }
+      })
+    ]);
+
+    // Build summary
+    const doctypeNames = Object.keys(results.doctypes);
+    const existingDoctypes = doctypeNames.filter(k => results.doctypes[k].exists);
+    const missingDoctypes = doctypeNames.filter(k => !results.doctypes[k].exists);
+
+    const documentKeys = Object.keys(results.documents);
+    const existingDocs = documentKeys.filter(k => results.documents[k].exists);
+    const missingDocs = documentKeys.filter(k => !results.documents[k].exists);
+
+    const blueprintNames = Object.keys(results.blueprints);
+    const existingBlueprints = blueprintNames.filter(k => results.blueprints[k].exists);
+    const missingBlueprints = blueprintNames.filter(k => !results.blueprints[k].exists);
+
+    // Build clean response (omit null/empty sections)
+    const response: Record<string, any> = {
+      summary: {
+        existingDoctypes,
+        missingDoctypes,
+        existingBlueprints,
+        missingBlueprints
+      }
+    };
+
+    if (Object.keys(results.doctypes).length > 0) response.doctypes = results.doctypes;
+    if (Object.keys(results.documents).length > 0) response.documents = results.documents;
+    if (Object.keys(results.blueprints).length > 0) response.blueprints = results.blueprints;
+    if (Object.keys(results.lists).length > 0) response.lists = results.lists;
+    if (results.modules) response.modules = results.modules;
+    if (results.doctypesInModule) response.doctypesInModule = results.doctypesInModule;
+    if (results.foundDoctypes) response.foundDoctypes = results.foundDoctypes;
+    if (Object.keys(results.counts).length > 0) response.counts = results.counts;
+
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(response, null, 2)
+      }],
+      isError: false
+    };
+  }
+
   // Handle DocType operations
   if (toolName === "create_doctype") {
     const result = await docApi.callMethod(
@@ -410,17 +668,21 @@ export async function executeTool(
       client,
       "sentra_core.builder.tools.data_tools.create_child_table_util",
       {
-        name: args.name,
-        fields: args.fields,
-        module: args.module || "Sentra Core"
+        parent_doctype: args.parent_doctype,
+        child_doctype_name: args.child_doctype_name,
+        child_fields: args.child_fields,
+        parent_field_label: args.parent_field_label || null,
+        parent_fieldname: args.parent_fieldname || null
       }
     );
+    // Result is wrapped: { message: { success: true, ... } }
+    const data = result?.message || result;
     return {
       content: [{
         type: "text",
-        text: JSON.stringify(result, null, 2)
+        text: JSON.stringify(data, null, 2)
       }],
-      isError: false
+      isError: !data?.success
     };
   }
 
