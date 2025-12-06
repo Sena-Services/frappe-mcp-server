@@ -17,6 +17,63 @@ import { DOCTYPE_OPERATIONS_TOOLS } from './doctype-operations.js';
 import { WORKFLOW_TOOLS } from './workflow-operations.js';
 import { UI_TOOLS } from './ui-operations.js';
 
+/**
+ * Helper function to extract success from Frappe API response
+ * Frappe returns { message: { success: true/false, ... } } OR { success: true/false, ... }
+ */
+function getSuccess(result: any): boolean {
+  return result?.message?.success ?? result?.success ?? false;
+}
+
+/**
+ * Validate JSON string and return detailed error with fix suggestions.
+ * Used for workflow blueprint triggers/actions validation.
+ */
+function validateJsonWithHelp(jsonStr: string, fieldName: string): { valid: boolean; error?: string; suggestion?: string } {
+  try {
+    JSON.parse(jsonStr);
+    return { valid: true };
+  } catch (e: any) {
+    const errorMsg = e.message || 'Unknown JSON error';
+    const match = errorMsg.match(/position (\d+)/i) || errorMsg.match(/column (\d+)/i);
+    const position = match ? parseInt(match[1]) : null;
+
+    // Count brackets to find mismatches
+    let openCurly = 0, closeCurly = 0, openSquare = 0, closeSquare = 0;
+    for (const c of jsonStr) {
+      if (c === '{') openCurly++;
+      if (c === '}') closeCurly++;
+      if (c === '[') openSquare++;
+      if (c === ']') closeSquare++;
+    }
+
+    let suggestion = '';
+    if (openCurly > closeCurly) {
+      suggestion = `Missing ${openCurly - closeCurly} closing brace(s) "}". Each action object needs: {"action_name": {...}} - make sure every { has a matching }.`;
+    } else if (openCurly < closeCurly) {
+      suggestion = `Extra ${closeCurly - openCurly} closing brace(s) "}". Remove the extra }.`;
+    } else if (openSquare > closeSquare) {
+      suggestion = `Missing ${openSquare - closeSquare} closing bracket(s) "]".`;
+    } else if (openSquare < closeSquare) {
+      suggestion = `Extra ${closeSquare - openSquare} closing bracket(s) "]".`;
+    }
+
+    // Show context around the error
+    let context = '';
+    if (position !== null && position < jsonStr.length) {
+      const start = Math.max(0, position - 40);
+      const end = Math.min(jsonStr.length, position + 40);
+      context = `\n\nError location: ...${jsonStr.slice(start, position)}<<<HERE>>>${jsonStr.slice(position, end)}...`;
+    }
+
+    return {
+      valid: false,
+      error: `Invalid JSON in ${fieldName}: ${errorMsg}${context}`,
+      suggestion: suggestion || 'Check that all brackets are properly matched and all strings are quoted with double quotes.'
+    };
+  }
+}
+
 export interface SiteCredentials {
   url: string;
   api_key: string;
@@ -738,13 +795,117 @@ export async function executeTool(
 
   // Handle workflow operations - Blueprint CRUD
   if (toolName === "create_blueprint") {
+    // Pre-validate JSON before sending to backend
+    const triggersValidation = validateJsonWithHelp(args.triggers as string, 'triggers');
+    if (!triggersValidation.valid) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: false,
+            error: triggersValidation.error,
+            suggestion: triggersValidation.suggestion,
+            fix_hint: "Triggers should be: [{\"doctype\": \"DocTypeName\", \"event\": \"after_insert\"}]",
+            tip: "For complex workflows with nested IF/SWITCH, use action_groups to flatten the structure. See workflow_agent prompt for examples."
+          }, null, 2)
+        }],
+        isError: true
+      };
+    }
+
+    const actionsValidation = validateJsonWithHelp(args.actions as string, 'actions');
+    if (!actionsValidation.valid) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: false,
+            error: actionsValidation.error,
+            suggestion: actionsValidation.suggestion,
+            fix_hint: "Each action needs proper closing: {\"action_name\": {\"param\": \"value\"}} - note the TWO closing braces }}",
+            tip: "For complex nested logic (IF inside SWITCH, etc.), USE ACTION GROUPS to flatten the JSON structure. Example: instead of deeply nested 'then' arrays, use \"then\": \"@group_name\" and define the group in action_groups object."
+          }, null, 2)
+        }],
+        isError: true
+      };
+    }
+
+    // If actions contains embedded action_groups, validate it's properly structured
+    try {
+      const parsedActions = JSON.parse(args.actions as string);
+      if (typeof parsedActions === 'object' && !Array.isArray(parsedActions)) {
+        if ('action_groups' in parsedActions) {
+          // Validate the embedded structure
+          if (!('actions' in parsedActions)) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  success: false,
+                  error: "When embedding action_groups in actions, you must also include an 'actions' array",
+                  suggestion: "Format: {\"actions\": [...], \"action_groups\": {...}}"
+                }, null, 2)
+              }],
+              isError: true
+            };
+          }
+        }
+      }
+    } catch (e) {
+      // Already handled by validateJsonWithHelp above
+    }
+
+    // Handle action_groups - either as separate parameter or embedded in actions
+    // The backend now handles both formats
+    let finalActions = args.actions as string;
+
+    // If action_groups provided as separate parameter, validate it
+    if (args.action_groups) {
+      const actionGroupsValidation = validateJsonWithHelp(args.action_groups as string, 'action_groups');
+      if (!actionGroupsValidation.valid) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              error: actionGroupsValidation.error,
+              suggestion: actionGroupsValidation.suggestion
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+
+      // Merge action_groups with actions for backend
+      try {
+        const actionsArray = JSON.parse(args.actions as string);
+        const actionGroupsObj = JSON.parse(args.action_groups as string);
+        finalActions = JSON.stringify({
+          actions: actionsArray,
+          action_groups: actionGroupsObj
+        });
+      } catch (e: any) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              error: `Failed to merge action_groups: ${e.message}`,
+              suggestion: "Ensure both actions and action_groups are valid JSON"
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+
     const result = await docApi.callMethod(
       client,
       "sentra_core.builder.tools.workflow_tools.create_blueprint_util",
       {
         name: args.name,
         triggers: args.triggers,
-        actions: args.actions,
+        actions: finalActions,
         description: args.description || null,
         parameters: args.parameters || null
       }
@@ -754,7 +915,7 @@ export async function executeTool(
         type: "text",
         text: JSON.stringify(result, null, 2)
       }],
-      isError: !result.success
+      isError: !getSuccess(result)
     };
   }
 
@@ -771,11 +932,47 @@ export async function executeTool(
         type: "text",
         text: JSON.stringify(result, null, 2)
       }],
-      isError: !result.success
+      isError: !getSuccess(result)
     };
   }
 
   if (toolName === "update_blueprint") {
+    // Pre-validate JSON if provided
+    if (args.triggers) {
+      const triggersValidation = validateJsonWithHelp(args.triggers as string, 'triggers');
+      if (!triggersValidation.valid) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              error: triggersValidation.error,
+              suggestion: triggersValidation.suggestion
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+
+    if (args.actions) {
+      const actionsValidation = validateJsonWithHelp(args.actions as string, 'actions');
+      if (!actionsValidation.valid) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              error: actionsValidation.error,
+              suggestion: actionsValidation.suggestion,
+              tip: "For complex nested logic, USE ACTION GROUPS to flatten the JSON structure."
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+
     const result = await docApi.callMethod(
       client,
       "sentra_core.builder.tools.workflow_tools.update_blueprint_util",
@@ -792,7 +989,7 @@ export async function executeTool(
         type: "text",
         text: JSON.stringify(result, null, 2)
       }],
-      isError: !result.success
+      isError: !getSuccess(result)
     };
   }
 
@@ -809,7 +1006,7 @@ export async function executeTool(
         type: "text",
         text: JSON.stringify(result, null, 2)
       }],
-      isError: !result.success
+      isError: !getSuccess(result)
     };
   }
 
@@ -826,7 +1023,7 @@ export async function executeTool(
         type: "text",
         text: JSON.stringify(result, null, 2)
       }],
-      isError: !result.success
+      isError: !getSuccess(result)
     };
   }
 
@@ -841,7 +1038,7 @@ export async function executeTool(
         type: "text",
         text: JSON.stringify(result, null, 2)
       }],
-      isError: !result.success
+      isError: !getSuccess(result)
     };
   }
 
@@ -856,7 +1053,7 @@ export async function executeTool(
         type: "text",
         text: JSON.stringify(result, null, 2)
       }],
-      isError: !result.success
+      isError: !getSuccess(result)
     };
   }
 

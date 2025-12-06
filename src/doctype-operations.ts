@@ -179,6 +179,12 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
     try {
         console.error(`Handling DocType operation tool: ${name} with args:`, args);
 
+        // Helper function to extract success from Frappe API response
+        // Frappe returns { message: { success: true/false, ... } } OR { success: true/false, ... }
+        const getSuccess = (result: any): boolean => {
+            return result?.message?.success ?? result?.success ?? false;
+        };
+
         if (name === "create_doctype") {
             if (!args || !args.name || !args.fields) {
                 throw new Error("Missing required arguments: name and fields are required");
@@ -202,7 +208,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !getSuccess(result)
             };
         }
 
@@ -227,7 +233,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !getSuccess(result)
             };
         }
 
@@ -250,7 +256,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !getSuccess(result)
             };
         }
 
@@ -272,7 +278,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !getSuccess(result)
             };
         }
 
