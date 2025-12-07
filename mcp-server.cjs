@@ -2,10 +2,17 @@
 
 /**
  * Multi-Tenant MCP Server with Session Management
- * Architecture:
- * - ONE MCP Server instance (reused across all sessions)
- * - MULTIPLE Transports (one per session, cached)
+ * Version: 0.2.17
+ *
+ * Architecture (Server-Per-Session):
+ * - ONE MCP Server instance PER SESSION (1:1 with transport)
+ * - Each session has its own { server, transport, credentials }
  * - Per-site config from site_config.json (5-minute cache, no polling)
+ *
+ * This architecture follows the official MCP SDK pattern and fixes the
+ * parallel tool call bug where mcpServer.connect(transport) would overwrite
+ * the previous transport, orphaning other sessions.
+ * See: docs/tech-debt/MCP_PARALLEL_TOOL_CALL_BUG.md
  */
 
 // Load environment variables from .env file
@@ -40,7 +47,8 @@ let ConfigManager, configManager;
 // ============================================================================
 // SESSION MANAGEMENT
 // ============================================================================
-// Session map: { "siteName:sessionId" → { transport, tenant, created } }
+// Session map: { "siteName:sessionId" → { server, transport, tenant, created, credentials } }
+// Each session has its own Server instance (1:1 relationship with transport)
 const sessions = {};
 
 // Session cleanup interval (every 5 minutes)
@@ -48,30 +56,30 @@ const SESSION_TTL = 60 * 60 * 1000; // 1 hour
 const CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 // ============================================================================
-// MCP SERVER INSTANCE (ONE GLOBAL INSTANCE, REUSED)
+// MCP SERVER FACTORY (ONE INSTANCE PER SESSION)
 // ============================================================================
-let mcpServer = null;
 
 /**
- * Initialize global MCP server (called once on startup)
+ * Create a new MCP Server instance with handlers.
+ * Called ONCE per session initialization (following official MCP SDK pattern).
+ *
+ * This fixes the parallel session bug where mcpServer.connect(transport)
+ * overwrites the previous transport, orphaning other sessions.
+ * See: docs/tech-debt/MCP_PARALLEL_TOOL_CALL_BUG.md
  */
-function initializeMCPServer() {
-  if (mcpServer) return mcpServer;
-
-  console.log('[MCP] Initializing global MCP server instance...');
-
-  mcpServer = new Server(
-    { name: 'frappe-mcp-server', version: '0.2.16' },
+function createMCPServer() {
+  const server = new Server(
+    { name: 'frappe-mcp-server', version: '0.2.17' },
     { capabilities: { tools: {} } }
   );
 
-  // Register handlers (once, globally)
-  mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
+  // Register handlers on THIS server instance
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
     const tools = mcpLibrary.listTools();
     return { tools };
   });
 
-  mcpServer.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const { name, arguments: args } = request.params;
 
     // Get credentials from authInfo (passed via req.auth by the transport)
@@ -88,8 +96,7 @@ function initializeMCPServer() {
     return await mcpLibrary.executeTool(name, args, credentials);
   });
 
-  console.log('[MCP] Global MCP server initialized');
-  return mcpServer;
+  return server;
 }
 
 /**
@@ -198,8 +205,13 @@ app.post(['/mcp', '/mcp/:siteName'], async (req, res) => {
       session.credentials = credentials;
     }
     else if (!sessionId && isInitializeRequest(req.body)) {
-      // CASE B: Create new session
+      // CASE B: Create new session with dedicated Server instance
+      // This follows the official MCP SDK pattern (see simpleStreamableHttp.js example)
+      // Each session gets its own Server to avoid transport overwrite bug
       console.log(`[MCP] Creating new session for site: ${siteName}`);
+
+      // Create NEW Server instance for this session (1:1 with transport)
+      const server = createMCPServer();
 
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
@@ -209,6 +221,7 @@ app.post(['/mcp', '/mcp/:siteName'], async (req, res) => {
           console.log(`[MCP] Session initialized: ${key}`);
 
           sessions[key] = {
+            server,      // Store server per session
             transport,
             tenant: siteName,
             created: Date.now(),
@@ -226,10 +239,11 @@ app.post(['/mcp', '/mcp/:siteName'], async (req, res) => {
         }
       };
 
-      // Connect transport to global MCP server
-      await mcpServer.connect(transport);
+      // Connect THIS server to THIS transport (1:1 relationship)
+      await server.connect(transport);
 
       session = {
+        server,
         transport,
         tenant: siteName,
         created: Date.now(),
@@ -340,6 +354,15 @@ function cleanupExpiredSessions() {
     if (age > SESSION_TTL) {
       console.log(`[MCP] Cleaning up expired session: ${key} (age: ${Math.round(age / 1000)}s)`);
 
+      // Close server first, then transport
+      try {
+        if (session.server) {
+          session.server.close();
+        }
+      } catch (error) {
+        console.error(`[MCP] Error closing server for ${key}:`, error.message);
+      }
+
       try {
         session.transport.close();
       } catch (error) {
@@ -403,43 +426,44 @@ async function startServer() {
 
     console.log('[MCP] Successfully loaded frappe-mcp-server library');
 
-    // Initialize global MCP server
-    initializeMCPServer();
+    // No global MCP server initialization needed
+    // Each session creates its own Server instance (server-per-session pattern)
 
     // Start session cleanup job
     setInterval(cleanupExpiredSessions, CLEANUP_INTERVAL);
     console.log(`[MCP] Session cleanup job started (interval: ${CLEANUP_INTERVAL / 1000}s, TTL: ${SESSION_TTL / 1000}s)`);
 
     // Start HTTP server
-    const server = app.listen(MCP_PORT, '127.0.0.1', () => {
+    const httpServer = app.listen(MCP_PORT, '127.0.0.1', () => {
       console.log(`[MCP] Multi-Tenant MCP Server listening on http://127.0.0.1:${MCP_PORT}`);
       console.log(`[MCP] Config path: ${SITES_CONFIG_PATH}`);
-      console.log(`[MCP] Architecture: Session-based with transport caching`);
+      console.log(`[MCP] Architecture: Server-per-session (fixes parallel tool call bug)`);
     });
 
     // Graceful shutdown
     const shutdown = () => {
       console.log('[MCP] Shutting down Multi-Tenant MCP Server...');
 
-      // Close all sessions
+      // Close all sessions (each has its own server + transport)
       for (const [key, session] of Object.entries(sessions)) {
+        // Close server first
+        try {
+          if (session.server) {
+            session.server.close();
+          }
+        } catch (error) {
+          console.error(`[MCP] Error closing server for ${key}:`, error.message);
+        }
+
+        // Close transport
         try {
           session.transport.close();
         } catch (error) {
-          console.error(`[MCP] Error closing session ${key}:`, error.message);
+          console.error(`[MCP] Error closing transport for ${key}:`, error.message);
         }
       }
 
-      // Close MCP server
-      if (mcpServer) {
-        try {
-          mcpServer.close();
-        } catch (error) {
-          console.error('[MCP] Error closing MCP server:', error.message);
-        }
-      }
-
-      server.close(() => {
+      httpServer.close(() => {
         console.log('[MCP] Server closed');
         process.exit(0);
       });
