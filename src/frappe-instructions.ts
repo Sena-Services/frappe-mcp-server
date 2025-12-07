@@ -626,68 +626,142 @@ export const HELPER_TOOLS = [
   },
   {
     name: "explore_system",
-    description: "MASTER EXPLORATION TOOL: Check current system state in ONE call. Batch-checks DocTypes (with schema), documents, blueprints, modules, and more. Use this before planning to understand what exists vs what needs to be created.",
+    description: "MASTER EXPLORATION TOOL: Check system state in ONE call. Schema: 'doctypes'/'fields'/'relationships'/'documents'/'doctypes_full'. Workflows: 'blueprints'/'triggers_for_doctype'/'schedules'/'roles'/'available_events'/'available_actions'. UI: 'ui_layouts'/'ui_templates'/'ui_pages'/'ui_contracts'. Agents: 'ai_agents'/'ai_agents_full'/'graph_architectures'/'available_models'/'available_agent_tools'/'system_agents'.",
     inputSchema: {
       type: "object",
       properties: {
         doctypes: {
           type: "array",
           items: { type: "string" },
-          description: "DocType names to check existence and get schema (e.g., ['Customer', 'Order'])"
+          description: "DocType names for QUICK existence check - returns exists, isTable, isCustom, autoname, fieldCount"
+        },
+        fields: {
+          type: "array",
+          items: { type: "string" },
+          description: "DocType names to get ALL FIELDS with properties (fieldname, fieldtype, label, reqd, unique, hidden, read_only, default, options, etc.)"
+        },
+        relationships: {
+          type: "array",
+          items: { type: "string" },
+          description: "DocType names to get RELATIONSHIPS - link_fields (outgoing), child_tables (with their fields), linked_from (backlinks from other DocTypes)"
         },
         documents: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              doctype: { type: "string" },
-              name: { type: "string" }
+          type: "object",
+          properties: {
+            check: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  doctype: { type: "string" },
+                  name: { type: "string" }
+                },
+                required: ["doctype", "name"]
+              },
+              description: "Check if specific documents exist"
             },
-            required: ["doctype", "name"]
+            list: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  doctype: { type: "string" },
+                  filters: { type: "object" },
+                  limit: { type: "number" }
+                },
+                required: ["doctype"]
+              },
+              description: "List documents matching filters"
+            },
+            count: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  doctype: { type: "string" },
+                  filters: { type: "object" }
+                },
+                required: ["doctype"]
+              },
+              description: "Count documents matching filters"
+            }
           },
-          description: "Specific documents to check existence (e.g., [{doctype: 'User', name: 'admin'}])"
+          description: "Document operations: check existence, list records, count records"
+        },
+        doctypes_full: {
+          type: "array",
+          items: { type: "string" },
+          description: "DocType names for COMPLETE schema - combines fields + relationships + document_count + permissions (use sparingly, expensive)"
         },
         blueprints: {
           type: "array",
           items: { type: "string" },
-          description: "Blueprint names to check (e.g., ['On Customer Create'])"
+          description: "Blueprint names to check - returns exists, is_active, triggers, actions summary, description"
         },
-        list_queries: {
+        triggers_for_doctype: {
           type: "array",
-          items: {
-            type: "object",
-            properties: {
-              doctype: { type: "string" },
-              filters: { type: "object" },
-              limit: { type: "number" }
-            },
-            required: ["doctype"]
-          },
-          description: "List documents matching filters (e.g., [{doctype: 'DocType', filters: {module: 'Sentra Core'}}])"
+          items: { type: "string" },
+          description: "DocType names to find ALL blueprints that trigger on them - returns blueprint list with events (IMPORTANT: check before creating workflows to avoid duplicates)"
         },
-        find_doctypes: {
-          type: "string",
-          description: "Pattern to search for DocTypes (e.g., 'Customer' finds Customer, Customer Group, etc.)"
-        },
-        modules: {
+        schedules: {
           type: "boolean",
-          description: "Set true to list all available modules"
+          description: "Set true to list all scheduled workflows (cron-based triggers)"
         },
-        doctypes_in_module: {
-          type: "string",
-          description: "Module name to list all DocTypes in (e.g., 'Sentra Core')"
+        roles: {
+          type: "boolean",
+          description: "Set true to list available roles for send_notification recipients"
         },
-        count_queries: {
+        available_events: {
+          type: "boolean",
+          description: "Set true to get list of valid Frappe event types for triggers (after_insert, on_update, on_submit, on_trash, etc.)"
+        },
+        available_actions: {
+          type: "boolean",
+          description: "Set true to get list of supported action types with required params (create_document, send_notification, if, switch, etc.)"
+        },
+        ui_layouts: {
+          type: "boolean",
+          description: "Set true to list all available UI layout contracts (page structure templates like Default3RowLayout, DashboardGridLayout)"
+        },
+        ui_templates: {
+          type: "boolean",
+          description: "Set true to list all available UI template contracts (components like ListViewTemplate, TopNavBarTemplate, RightDetailPanelTemplate)"
+        },
+        ui_pages: {
+          type: "boolean",
+          description: "Set true to list all existing UI pages in ERP Builder (page_id, title, layout, sections)"
+        },
+        ui_contracts: {
           type: "array",
-          items: {
-            type: "object",
-            properties: {
-              doctype: { type: "string" },
-              filters: { type: "object" }
-            },
-            required: ["doctype"]
-          },
-          description: "Count documents (e.g., [{doctype: 'Customer'}, {doctype: 'Order', filters: {status: 'Open'}}])"
+          items: { type: "string" },
+          description: "Contract IDs to get detailed info (e.g., 'layout:Default3RowLayout', 'template:ListViewTemplate') - returns config_contract, minimal_example, usage"
+        },
+        // Agent Builder parameters (16-21)
+        ai_agents: {
+          type: "array",
+          items: { type: "string" },
+          description: "AI Agent names to check - returns agent_name, agent_type, graph_architecture, enabled, model, temperature, max_tokens, is_system_agent, is_worker_agent, is_whatsapp_agent, role_title, allowed_tools count"
+        },
+        ai_agents_full: {
+          type: "array",
+          items: { type: "string" },
+          description: "AI Agent names for COMPLETE details - includes all fields, allowed_tools list, workers, stages, stage_objectives, stage_transitions, stage_tools, system_prompt"
+        },
+        graph_architectures: {
+          type: "boolean",
+          description: "Set true to list all available graph architectures (single_agent, planner_workers) with descriptions, nodes, and constraints"
+        },
+        available_models: {
+          type: "boolean",
+          description: "Set true to list all available AI models by provider (OpenRouter, Gemini, XAI Grok, OpenAI) with thinking/reasoning support flags"
+        },
+        available_agent_tools: {
+          type: "boolean",
+          description: "Set true to list ALL MCP tools that can be assigned to agents - returns tool_name, description, category"
+        },
+        system_agents: {
+          type: "boolean",
+          description: "Set true to list all system agents (orchestrator, data_agent, ui_agent, workflow_agent, agent_builder) with their configurations and tools"
         }
       },
       required: []

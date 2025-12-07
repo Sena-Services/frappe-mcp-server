@@ -441,11 +441,11 @@ export async function executeTool(
   }
 
   // Handle explore_system - MASTER exploration tool
+  // 5 Parameters: doctypes, fields, relationships, documents, doctypes_full
   if (toolName === "explore_system") {
     console.error(`[explore_system] Called with args: ${JSON.stringify(args)}`);
 
-    // FIX 4: Clear Frappe cache before exploration to ensure fresh data
-    // This is critical when DocTypes have been created/modified in parallel
+    // Clear Frappe cache before exploration to ensure fresh data
     try {
       await docApi.callMethod(client, "frappe.clear_cache", {});
       console.error(`[explore_system] Cache cleared successfully`);
@@ -453,76 +453,167 @@ export async function executeTool(
       console.error(`[explore_system] Cache clear failed (non-fatal):`, cacheError);
     }
 
+    // Parse all parameters (now 11 top-level params)
     const doctypesToCheck: string[] = args.doctypes || [];
-    const documentsToCheck: Array<{doctype: string, name: string}> = args.documents || [];
+    const fieldsToGet: string[] = args.fields || [];
+    const relationshipsToGet: string[] = args.relationships || [];
+    const documentsArg: { check?: Array<{doctype: string, name: string}>, list?: Array<{doctype: string, filters?: any, limit?: number}>, count?: Array<{doctype: string, filters?: any}> } = args.documents || {};
+    const doctypesFullCheck: string[] = args.doctypes_full || [];
+
+    // Workflow params (now top-level)
     const blueprintsToCheck: string[] = args.blueprints || [];
-    const listQueries: Array<{doctype: string, filters?: any, limit?: number}> = args.list_queries || [];
-    const findDoctypesPattern: string | undefined = args.find_doctypes;
-    const listModules: boolean = args.modules || false;
-    const doctypesInModule: string | undefined = args.doctypes_in_module;
-    const countQueries: Array<{doctype: string, filters?: any}> = args.count_queries || [];
+    const triggersForDoctype: string[] = args.triggers_for_doctype || [];
+    const getSchedules: boolean = args.schedules || false;
+    const getRoles: boolean = args.roles || false;
+    const getAvailableEvents: boolean = args.available_events || false;
+    const getAvailableActions: boolean = args.available_actions || false;
+
+    // UI params
+    const getUILayouts: boolean = args.ui_layouts || false;
+    const getUITemplates: boolean = args.ui_templates || false;
+    const getUIPages: boolean = args.ui_pages || false;
+    const uiContractsToGet: string[] = args.ui_contracts || [];
+
+    // Agent Builder params (16-21)
+    const aiAgentsToCheck: string[] = args.ai_agents || [];
+    const aiAgentsFullCheck: string[] = args.ai_agents_full || [];
+    const getGraphArchitectures: boolean = args.graph_architectures || false;
+    const getAvailableModels: boolean = args.available_models || false;
+    const getAvailableAgentTools: boolean = args.available_agent_tools || false;
+    const getSystemAgents: boolean = args.system_agents || false;
 
     const results: Record<string, any> = {
       doctypes: {},
-      documents: {},
+      fields: {},
+      relationships: {},
+      documents: { check: {}, list: {}, count: {} },
+      doctypes_full: {},
       blueprints: {},
-      lists: {},
-      modules: null,
-      doctypesInModule: null,
-      foundDoctypes: null,
-      counts: {}
+      triggers_for_doctype: {},
+      schedules: null,
+      roles: null,
+      available_events: null,
+      available_actions: null,
+      // UI results
+      ui_layouts: null,
+      ui_templates: null,
+      ui_pages: null,
+      ui_contracts: {},
+      // Agent Builder results
+      ai_agents: {},
+      ai_agents_full: {},
+      graph_architectures: null,
+      available_models: null,
+      available_agent_tools: null,
+      system_agents: null
     };
+
+    // Helper function to check if DocType exists in DB
+    async function checkDoctypeExists(doctype: string): Promise<boolean> {
+      const countResult = await client.call().get('frappe.client.get_count', {
+        doctype: 'DocType',
+        filters: { name: doctype }
+      });
+      const count = typeof countResult === 'object' && countResult !== null
+        ? (countResult.message ?? countResult.data ?? 0)
+        : (typeof countResult === 'number' ? countResult : 0);
+      return count > 0;
+    }
+
+    // Helper function to get child table schema
+    async function getChildTableSchema(childDoctype: string): Promise<any> {
+      try {
+        const exists = await checkDoctypeExists(childDoctype);
+        if (!exists) {
+          return { exists: false, doctype: childDoctype };
+        }
+        const schema = await schemaApi.getDocTypeSchema(client, childDoctype);
+        return {
+          exists: true,
+          doctype: childDoctype,
+          field_count: schema.fields.length,
+          fields: schema.fields.map((f: any) => ({
+            fieldname: f.fieldname,
+            fieldtype: f.fieldtype,
+            label: f.label,
+            reqd: f.required ? 1 : 0,
+            options: f.options || '',
+            default: f.default || ''
+          }))
+        };
+      } catch (error) {
+        return { exists: false, doctype: childDoctype, error: 'Failed to get schema' };
+      }
+    }
+
+    // Helper to get backlinks for a DocType
+    async function getBacklinks(doctype: string): Promise<any[]> {
+      const linked_from: any[] = [];
+      try {
+        const linkingDoctypes = await docApi.listDocuments(
+          client,
+          'DocField',
+          {
+            fieldtype: 'Link',
+            options: doctype,
+            parent: ['not like', 'Custom Field']
+          },
+          ['parent', 'fieldname'],
+          50
+        );
+
+        const backlinkMap: Record<string, { fieldname: string }> = {};
+        for (const lf of linkingDoctypes) {
+          if (lf.parent && lf.parent !== doctype) {
+            backlinkMap[lf.parent] = { fieldname: lf.fieldname };
+          }
+        }
+
+        try {
+          const customLinkFields = await docApi.listDocuments(
+            client,
+            'Custom Field',
+            { fieldtype: 'Link', options: doctype },
+            ['dt', 'fieldname'],
+            50
+          );
+          for (const cf of customLinkFields) {
+            if (cf.dt && cf.dt !== doctype) {
+              backlinkMap[cf.dt] = { fieldname: cf.fieldname };
+            }
+          }
+        } catch (e) { /* Custom Field may not exist */ }
+
+        for (const [dt, info] of Object.entries(backlinkMap)) {
+          linked_from.push({ doctype: dt, fieldname: info.fieldname });
+        }
+      } catch (e) {
+        console.error(`[explore_system] Error getting backlinks for ${doctype}:`, e);
+      }
+      return linked_from;
+    }
 
     // Run all checks in parallel
     await Promise.all([
-      // 1. Check DocTypes (with schema)
-      // IMPORTANT: First check if DocType exists in DB using frappe.db.exists
-      // This avoids cache issues where getdoctype returns stale data for deleted DocTypes
+      // 1. DOCTYPES - Quick existence check
       ...doctypesToCheck.map(async (doctype) => {
         try {
-          // First, verify DocType actually exists in database (not just in cache)
-          // Use frappe.client.get_count which is cache-free
-          // FIX: frappe-js-sdk returns {message: <count>}, not the count directly
-          const countResult = await client.call().get('frappe.client.get_count', {
-            doctype: 'DocType',
-            filters: { name: doctype }
-          });
-          // Extract count from response - handle both {message: N} and direct N formats
-          const count = typeof countResult === 'object' && countResult !== null
-            ? (countResult.message ?? countResult.data ?? 0)
-            : (typeof countResult === 'number' ? countResult : 0);
-          const exists = count > 0;
-
-          console.error(`[explore_system] DocType ${doctype} DB exists check: ${exists} (raw: ${JSON.stringify(countResult)}, parsed count: ${count})`);
+          const exists = await checkDoctypeExists(doctype);
+          console.error(`[explore_system] DocType ${doctype} exists: ${exists}`);
 
           if (!exists) {
             results.doctypes[doctype] = { exists: false };
             return;
           }
 
-          // DocType exists in DB, now get schema
           const schema = await schemaApi.getDocTypeSchema(client, doctype);
-          const requiredFields = schema.fields
-            .filter((f: any) => f.reqd || f.required)
-            .map((f: any) => ({ name: f.fieldname, type: f.fieldtype }));
-          const linkFields = schema.fields
-            .filter((f: any) => f.fieldtype === "Link")
-            .map((f: any) => ({ name: f.fieldname, target: f.options }));
-          const tableFields = schema.fields
-            .filter((f: any) => f.fieldtype === "Table")
-            .map((f: any) => ({ name: f.fieldname, childTable: f.options }));
-
           results.doctypes[doctype] = {
             exists: true,
             isTable: schema.istable || false,
             isSingle: schema.issingle || false,
             isCustom: schema.custom || false,
-            module: schema.module,
             autoname: schema.autoname,
-            fieldCount: schema.fields.length,
-            requiredFields,
-            linkFields,
-            tableFields
+            fieldCount: schema.fields.length
           };
         } catch (error: any) {
           console.error(`[explore_system] Error checking ${doctype}:`, error.message);
@@ -530,12 +621,106 @@ export async function executeTool(
         }
       }),
 
-      // 2. Check specific documents
-      ...documentsToCheck.map(async (doc) => {
+      // 2. FIELDS - Get all fields with properties
+      ...fieldsToGet.map(async (doctype) => {
+        try {
+          const exists = await checkDoctypeExists(doctype);
+          if (!exists) {
+            results.fields[doctype] = { exists: false };
+            return;
+          }
+
+          const schema = await schemaApi.getDocTypeSchema(client, doctype);
+          const fields = schema.fields.map((f: any, idx: number) => ({
+            fieldname: f.fieldname,
+            fieldtype: f.fieldtype,
+            label: f.label,
+            reqd: f.required ? 1 : 0,
+            unique: f.unique ? 1 : 0,
+            hidden: f.hidden ? 1 : 0,
+            read_only: f.read_only ? 1 : 0,
+            in_list_view: f.in_list_view ? 1 : 0,
+            in_standard_filter: f.in_standard_filter ? 1 : 0,
+            default: f.default || '',
+            description: f.description || '',
+            options: f.options || '',
+            idx: idx + 1
+          }));
+
+          const field_summary: Record<string, any> = { total: fields.length, by_type: {} };
+          for (const f of fields) {
+            field_summary.by_type[f.fieldtype] = (field_summary.by_type[f.fieldtype] || 0) + 1;
+          }
+
+          results.fields[doctype] = {
+            exists: true,
+            fields,
+            field_summary,
+            required_fields: fields.filter((f: any) => f.reqd === 1).map((f: any) => ({ fieldname: f.fieldname, fieldtype: f.fieldtype, label: f.label })),
+            select_fields: fields.filter((f: any) => f.fieldtype === 'Select' && f.options).map((f: any) => ({
+              fieldname: f.fieldname,
+              options: f.options.split('\n').filter((o: string) => o.trim()),
+              default: f.default || null
+            }))
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting fields for ${doctype}:`, error.message);
+          results.fields[doctype] = { exists: false, error: error.message };
+        }
+      }),
+
+      // 3. RELATIONSHIPS - Get links, child tables, backlinks
+      ...relationshipsToGet.map(async (doctype) => {
+        try {
+          const exists = await checkDoctypeExists(doctype);
+          if (!exists) {
+            results.relationships[doctype] = { exists: false };
+            return;
+          }
+
+          const schema = await schemaApi.getDocTypeSchema(client, doctype);
+
+          // Link fields (outgoing)
+          const link_fields = schema.fields
+            .filter((f: any) => f.fieldtype === 'Link')
+            .map((f: any) => ({ fieldname: f.fieldname, target: f.options, reqd: f.required || false }));
+
+          // Child tables with their schemas
+          const tableFields = schema.fields.filter((f: any) => f.fieldtype === 'Table');
+          const child_tables: any[] = [];
+          for (const tf of tableFields) {
+            if (tf.options) {
+              const childSchema = await getChildTableSchema(tf.options);
+              child_tables.push({
+                fieldname: tf.fieldname,
+                doctype: tf.options,
+                label: tf.label,
+                ...childSchema
+              });
+            }
+          }
+
+          // Backlinks (DocTypes that link TO this DocType)
+          const linked_from = await getBacklinks(doctype);
+
+          results.relationships[doctype] = {
+            exists: true,
+            link_fields,
+            child_tables,
+            linked_from
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting relationships for ${doctype}:`, error.message);
+          results.relationships[doctype] = { exists: false, error: error.message };
+        }
+      }),
+
+      // 4a. DOCUMENTS.CHECK - Check if specific documents exist
+      ...(documentsArg.check || []).map(async (doc) => {
         const key = `${doc.doctype}:${doc.name}`;
         try {
           const document = await docApi.getDocument(client, doc.doctype, doc.name);
-          results.documents[key] = {
+          results.documents.check[key] = {
             exists: true,
             doctype: doc.doctype,
             name: doc.name,
@@ -546,28 +731,13 @@ export async function executeTool(
             )
           };
         } catch (error: any) {
-          results.documents[key] = { exists: false, doctype: doc.doctype, name: doc.name };
+          results.documents.check[key] = { exists: false, doctype: doc.doctype, name: doc.name };
         }
       }),
 
-      // 3. Check blueprints
-      ...blueprintsToCheck.map(async (bpName) => {
-        try {
-          const bp = await docApi.getDocument(client, "BL Blueprint", bpName);
-          results.blueprints[bpName] = {
-            exists: true,
-            name: bp.name,
-            description: bp.blueprint_description,
-            isActive: bp.is_active
-          };
-        } catch (error: any) {
-          results.blueprints[bpName] = { exists: false };
-        }
-      }),
-
-      // 4. List queries
-      ...listQueries.map(async (query, idx) => {
-        const key = `${query.doctype}_query_${idx}`;
+      // 4b. DOCUMENTS.LIST - List documents matching filters
+      ...(documentsArg.list || []).map(async (query, idx) => {
+        const key = `${query.doctype}_${idx}`;
         try {
           const docs = await docApi.listDocuments(
             client,
@@ -576,132 +746,1051 @@ export async function executeTool(
             ["name"],
             query.limit || 20
           );
-          results.lists[key] = {
+          results.documents.list[key] = {
             doctype: query.doctype,
             filters: query.filters,
             count: docs.length,
             names: docs.map((d: any) => d.name)
           };
         } catch (error: any) {
-          results.lists[key] = {
-            doctype: query.doctype,
-            error: error?.message || "Query failed"
-          };
+          results.documents.list[key] = { doctype: query.doctype, error: error?.message || "Query failed" };
         }
       }),
 
-      // 5. Find DocTypes by pattern
-      (async () => {
-        if (findDoctypesPattern) {
-          try {
-            const found = await frappeHelpers.findDocTypes(client, findDoctypesPattern, { limit: 30 });
-            results.foundDoctypes = found.map((d: any) => ({
-              name: d.name,
-              module: d.module,
-              isTable: d.istable,
-              isCustom: d.custom
-            }));
-          } catch (error: any) {
-            results.foundDoctypes = { error: error?.message || "Search failed" };
-          }
-        }
-      })(),
-
-      // 6. List all modules
-      (async () => {
-        if (listModules) {
-          try {
-            const modules = await schemaApi.getAllModules(client);
-            results.modules = modules.map((m: any) => m.name || m);
-          } catch (error: any) {
-            results.modules = { error: error?.message || "Failed to list modules" };
-          }
-        }
-      })(),
-
-      // 7. List DocTypes in a specific module
-      (async () => {
-        if (doctypesInModule) {
-          try {
-            const docs = await docApi.listDocuments(
-              client,
-              "DocType",
-              { module: doctypesInModule },
-              ["name", "istable", "issingle", "custom"],
-              100
-            );
-            results.doctypesInModule = {
-              module: doctypesInModule,
-              count: docs.length,
-              doctypes: docs.map((d: any) => ({
-                name: d.name,
-                isTable: d.istable,
-                isSingle: d.issingle,
-                isCustom: d.custom
-              }))
-            };
-          } catch (error: any) {
-            results.doctypesInModule = { module: doctypesInModule, error: error?.message || "Query failed" };
-          }
-        }
-      })(),
-
-      // 8. Count queries
-      ...countQueries.map(async (query) => {
-        const key = query.filters ? `${query.doctype}:${JSON.stringify(query.filters)}` : query.doctype;
+      // 4c. DOCUMENTS.COUNT - Count documents matching filters
+      ...(documentsArg.count || []).map(async (query) => {
+        const key = query.filters ? `${query.doctype}:${Object.keys(query.filters).map(k => `${k}=${query.filters[k]}`).join(',')}` : query.doctype;
         try {
-          const docs = await docApi.listDocuments(
-            client,
-            query.doctype,
-            query.filters,
-            ["name"],
-            0  // We just need the count
-          );
-          results.counts[key] = {
+          const countResult = await client.call().get('frappe.client.get_count', {
             doctype: query.doctype,
-            filters: query.filters,
-            count: docs.length
+            filters: query.filters || {}
+          });
+          const count = typeof countResult === 'object' && countResult !== null
+            ? (countResult.message ?? countResult.data ?? 0)
+            : (typeof countResult === 'number' ? countResult : 0);
+          results.documents.count[key] = { doctype: query.doctype, filters: query.filters, count };
+        } catch (error: any) {
+          results.documents.count[key] = { doctype: query.doctype, error: error?.message || "Count failed" };
+        }
+      }),
+
+      // 5. DOCTYPES_FULL - Complete schema (fields + relationships + document_count + permissions)
+      ...doctypesFullCheck.map(async (doctype) => {
+        try {
+          const exists = await checkDoctypeExists(doctype);
+          console.error(`[explore_system] DocType FULL ${doctype} exists: ${exists}`);
+
+          if (!exists) {
+            results.doctypes_full[doctype] = { exists: false };
+            return;
+          }
+
+          const schema = await schemaApi.getDocTypeSchema(client, doctype);
+
+          // Fields with full properties
+          const fields = schema.fields.map((f: any, idx: number) => ({
+            fieldname: f.fieldname,
+            fieldtype: f.fieldtype,
+            label: f.label,
+            reqd: f.required ? 1 : 0,
+            unique: f.unique ? 1 : 0,
+            hidden: f.hidden ? 1 : 0,
+            read_only: f.read_only ? 1 : 0,
+            in_list_view: f.in_list_view ? 1 : 0,
+            in_standard_filter: f.in_standard_filter ? 1 : 0,
+            default: f.default || '',
+            description: f.description || '',
+            options: f.options || '',
+            idx: idx + 1
+          }));
+
+          const field_summary: Record<string, any> = { total: fields.length, by_type: {} };
+          for (const f of fields) {
+            field_summary.by_type[f.fieldtype] = (field_summary.by_type[f.fieldtype] || 0) + 1;
+          }
+
+          const required_fields = fields.filter((f: any) => f.reqd === 1).map((f: any) => ({ fieldname: f.fieldname, fieldtype: f.fieldtype, label: f.label }));
+          const link_fields = fields.filter((f: any) => f.fieldtype === 'Link').map((f: any) => ({ fieldname: f.fieldname, target: f.options, reqd: f.reqd === 1 }));
+          const select_fields = fields.filter((f: any) => f.fieldtype === 'Select' && f.options).map((f: any) => ({
+            fieldname: f.fieldname,
+            options: f.options.split('\n').filter((o: string) => o.trim()),
+            default: f.default || null
+          }));
+
+          // Child tables
+          const tableFields = schema.fields.filter((f: any) => f.fieldtype === 'Table');
+          const child_tables: any[] = [];
+          for (const tf of tableFields) {
+            if (tf.options) {
+              const childSchema = await getChildTableSchema(tf.options);
+              child_tables.push({ fieldname: tf.fieldname, doctype: tf.options, label: tf.label, ...childSchema });
+            }
+          }
+
+          // Document count
+          let document_count = 0;
+          try {
+            const countResult = await client.call().get('frappe.client.get_count', { doctype });
+            document_count = typeof countResult === 'object' && countResult !== null
+              ? (countResult.message ?? countResult.data ?? 0)
+              : (typeof countResult === 'number' ? countResult : 0);
+          } catch (e) { /* ignore */ }
+
+          // Backlinks
+          const linked_from = await getBacklinks(doctype);
+
+          results.doctypes_full[doctype] = {
+            exists: true,
+            name: doctype,
+            isTable: schema.istable || false,
+            isSingle: schema.issingle || false,
+            isCustom: schema.custom || false,
+            autoname: schema.autoname,
+            naming_rule: schema.naming_rule || null,
+            is_submittable: schema.is_submittable || false,
+            track_changes: schema.track_changes || false,
+            fields,
+            field_summary,
+            required_fields,
+            link_fields,
+            child_tables,
+            select_fields,
+            linked_from,
+            document_count,
+            permissions: schema.permissions || []
           };
         } catch (error: any) {
-          results.counts[key] = {
-            doctype: query.doctype,
-            error: error?.message || "Count failed"
-          };
+          console.error(`[explore_system] Error getting full schema for ${doctype}:`, error.message);
+          results.doctypes_full[doctype] = { exists: false, error: error.message };
         }
-      })
+      }),
+
+      // 6. BLUEPRINTS - Check specific blueprints by name
+      ...blueprintsToCheck.map(async (blueprintName) => {
+        try {
+          // Check if blueprint exists
+          const blueprintDoc = await docApi.listDocuments(
+            client,
+            'BL Blueprint',
+            { blueprint_name: blueprintName },
+            ['blueprint_name', 'blueprint_description', 'is_active', 'workflow'],
+            1
+          );
+
+          if (!blueprintDoc || blueprintDoc.length === 0) {
+            results.blueprints[blueprintName] = { exists: false };
+            return;
+          }
+
+          const bp = blueprintDoc[0];
+          let workflowConfig: any = {};
+          try {
+            workflowConfig = typeof bp.workflow === 'string' ? JSON.parse(bp.workflow) : bp.workflow || {};
+          } catch (e) {
+            workflowConfig = {};
+          }
+
+          // Extract trigger summary
+          const triggers = workflowConfig.triggers || [];
+          const triggerSummary = triggers.map((t: any) => ({
+            doctype: t.doctype,
+            event: t.event,
+            trigger_type: t.trigger_type || 'doc_event',
+            cron: t.cron || null
+          }));
+
+          // Extract action types summary (just the action names, not full config)
+          const actions = workflowConfig.actions || [];
+          const actionTypes = actions.map((a: any) => {
+            if (typeof a === 'object') {
+              return Object.keys(a)[0];
+            }
+            return 'unknown';
+          });
+
+          // Check for action groups
+          const hasActionGroups = !!workflowConfig.action_groups;
+          const actionGroupNames = hasActionGroups ? Object.keys(workflowConfig.action_groups) : [];
+
+          results.blueprints[blueprintName] = {
+            exists: true,
+            is_active: bp.is_active || false,
+            description: bp.blueprint_description || '',
+            triggers: triggerSummary,
+            action_count: actions.length,
+            action_types: [...new Set(actionTypes)],
+            has_action_groups: hasActionGroups,
+            action_group_names: actionGroupNames
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error checking blueprint ${blueprintName}:`, error.message);
+          results.blueprints[blueprintName] = { exists: false, error: error.message };
+        }
+      }),
+
+      // 7. TRIGGERS_FOR_DOCTYPE - Find all blueprints that trigger on specific DocTypes
+      ...triggersForDoctype.map(async (doctype) => {
+        try {
+          // Query BL Hook Registry for this DocType
+          const hookRegistries = await docApi.listDocuments(
+            client,
+            'BL Hook Registry',
+            { doctype_name: doctype, is_registered: 1 },
+            ['hook_key', 'event_type', 'dependent_blueprints'],
+            50
+          );
+
+          if (!hookRegistries || hookRegistries.length === 0) {
+            results.triggers_for_doctype[doctype] = {
+              has_triggers: false,
+              blueprints: []
+            };
+            return;
+          }
+
+          // Collect all blueprints and their events
+          const blueprintEvents: Record<string, string[]> = {};
+          for (const hr of hookRegistries) {
+            let blueprintIds: string[] = [];
+            try {
+              blueprintIds = typeof hr.dependent_blueprints === 'string'
+                ? JSON.parse(hr.dependent_blueprints)
+                : hr.dependent_blueprints || [];
+            } catch (e) {
+              blueprintIds = [];
+            }
+
+            for (const bpId of blueprintIds) {
+              if (!blueprintEvents[bpId]) {
+                blueprintEvents[bpId] = [];
+              }
+              if (!blueprintEvents[bpId].includes(hr.event_type)) {
+                blueprintEvents[bpId].push(hr.event_type);
+              }
+            }
+          }
+
+          results.triggers_for_doctype[doctype] = {
+            has_triggers: Object.keys(blueprintEvents).length > 0,
+            blueprint_count: Object.keys(blueprintEvents).length,
+            blueprints: Object.entries(blueprintEvents).map(([name, events]) => ({
+              name,
+              events
+            }))
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting triggers for ${doctype}:`, error.message);
+          results.triggers_for_doctype[doctype] = { has_triggers: false, error: error.message };
+        }
+      }),
+
+      // 8. SCHEDULES - List all scheduled workflows
+      (async () => {
+        if (!getSchedules) return;
+        try {
+          const schedules = await docApi.listDocuments(
+            client,
+            'BL Scheduled Workflow Registry',
+            { is_active: 1 },
+            ['schedule_key', 'cron_expression', 'timezone', 'dependent_blueprints'],
+            100
+          );
+
+          results.schedules = {
+            count: schedules?.length || 0,
+            schedules: (schedules || []).map((s: any) => {
+              let blueprintIds: string[] = [];
+              try {
+                blueprintIds = typeof s.dependent_blueprints === 'string'
+                  ? JSON.parse(s.dependent_blueprints)
+                  : s.dependent_blueprints || [];
+              } catch (e) {
+                blueprintIds = [];
+              }
+              return {
+                schedule_key: s.schedule_key,
+                cron: s.cron_expression,
+                timezone: s.timezone,
+                blueprint_count: blueprintIds.length,
+                blueprints: blueprintIds
+              };
+            })
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting schedules:`, error.message);
+          results.schedules = { count: 0, error: error.message };
+        }
+      })(),
+
+      // 9. ROLES - List available roles for send_notification recipients
+      (async () => {
+        if (!getRoles) return;
+        try {
+          const roles = await docApi.listDocuments(
+            client,
+            'Role',
+            { disabled: 0 },
+            ['name', 'desk_access'],
+            200
+          );
+
+          // Categorize roles
+          const deskRoles = (roles || []).filter((r: any) => r.desk_access).map((r: any) => r.name);
+          const allRoles = (roles || []).map((r: any) => r.name);
+
+          results.roles = {
+            count: allRoles.length,
+            desk_roles: deskRoles,
+            all_roles: allRoles,
+            usage_hint: "Use 'role:RoleName' in recipients field, e.g., 'role:System Manager'"
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting roles:`, error.message);
+          results.roles = { count: 0, error: error.message };
+        }
+      })(),
+
+      // 10. AVAILABLE_EVENTS - List valid Frappe event types for triggers
+      (async () => {
+        if (!getAvailableEvents) return;
+        // These are static, but useful for planner context
+        results.available_events = {
+          doc_events: [
+            'before_insert', 'after_insert',
+            'before_validate', 'validate',
+            'before_save', 'after_save',
+            'on_update',
+            'before_submit', 'on_submit',
+            'before_cancel', 'on_cancel',
+            'before_update_after_submit', 'on_update_after_submit',
+            'on_trash', 'after_delete',
+            'on_change'
+          ],
+          common_events: {
+            'after_insert': 'When document is created',
+            'on_update': 'When document is updated/saved',
+            'on_submit': 'When submittable document is submitted',
+            'on_trash': 'When document is deleted'
+          },
+          schedule_trigger: {
+            description: 'Use trigger_type: "schedule" with cron expression',
+            example: { trigger_type: 'schedule', cron: '0 9 * * *', timezone: 'Asia/Kolkata' }
+          }
+        };
+      })(),
+
+      // 11. AVAILABLE_ACTIONS - List supported action types
+      (async () => {
+        if (!getAvailableActions) return;
+        // These are static, but useful for planner context
+        results.available_actions = {
+          crud: ['read_document', 'create_document', 'update_document', 'delete_document', 'list_documents'],
+          logic: ['calculate', 'if', 'switch'],
+          notifications: ['send_notification', 'send_whatsapp_message', 'send_instagram_message', 'console_log'],
+          integrations: ['ai_agent', 'vendor_action', 'call_function'],
+          vendor_shortcuts: [
+            'slack_send_message', 'discord_send_message', 'telegram_send_message',
+            'notion_create_page', 'google_sheets_add_row', 'airtable_create_record',
+            'trello_create_card', 'hubspot_create_contact'
+          ],
+          required_params: {
+            'send_notification': ['recipients', 'subject', 'message'],
+            'if': ['condition', 'then'],
+            'switch': ['field', 'cases'],
+            'create_document': ['doctype', 'fields'],
+            'update_document': ['name', 'fields'],
+            'read_document': ['doctype', 'name']
+          }
+        };
+      })(),
+
+      // 12. UI_LAYOUTS - List available layout contracts
+      (async () => {
+        if (!getUILayouts) return;
+        try {
+          const layouts = await docApi.listDocuments(
+            client,
+            'UI Contract',
+            { contract_type: 'Layout', is_active: 1 },
+            ['contract_id', 'component_name', 'summary', 'minimal_example'],
+            50
+          );
+          results.ui_layouts = {
+            count: layouts.length,
+            layouts: layouts.map((l: any) => ({
+              contract_id: l.contract_id,
+              component_name: l.component_name,
+              summary: l.summary,
+              minimal_example: l.minimal_example ? JSON.parse(l.minimal_example) : null
+            }))
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting UI layouts:`, error.message);
+          results.ui_layouts = { count: 0, error: error.message };
+        }
+      })(),
+
+      // 13. UI_TEMPLATES - List available template contracts
+      (async () => {
+        if (!getUITemplates) return;
+        try {
+          const templates = await docApi.listDocuments(
+            client,
+            'UI Contract',
+            { contract_type: 'Template', is_active: 1 },
+            ['contract_id', 'component_name', 'summary', 'minimal_example'],
+            100
+          );
+          results.ui_templates = {
+            count: templates.length,
+            templates: templates.map((t: any) => ({
+              contract_id: t.contract_id,
+              component_name: t.component_name,
+              summary: t.summary,
+              minimal_example: t.minimal_example ? JSON.parse(t.minimal_example) : null
+            }))
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting UI templates:`, error.message);
+          results.ui_templates = { count: 0, error: error.message };
+        }
+      })(),
+
+      // 14. UI_PAGES - List existing pages in ERP Builder
+      (async () => {
+        if (!getUIPages) return;
+        try {
+          // Get active ERP Builder
+          const builders = await docApi.listDocuments(
+            client,
+            'ERP Builder',
+            { enabled: 1 },
+            ['name', 'builder_name', 'ui_preview_configs'],
+            1
+          );
+
+          if (builders.length === 0) {
+            results.ui_pages = { count: 0, pages: [], message: 'No active ERP Builder found' };
+            return;
+          }
+
+          const builder = builders[0];
+          let pages: any[] = [];
+
+          if (builder.ui_preview_configs) {
+            try {
+              const configs = JSON.parse(builder.ui_preview_configs);
+              pages = configs.map((config: any) => ({
+                page_id: config.page_id,
+                page_title: config.page_title,
+                sidebar_label: config.sidebar_label,
+                sidebar_icon: config.sidebar_icon,
+                layout: config.layout?.template || 'Unknown',
+                section_count: config.sections?.length || 0,
+                sections: (config.sections || []).map((s: any) => ({
+                  placement: s.placement,
+                  ui_template: s.ui_template
+                }))
+              }));
+            } catch (parseErr) {
+              console.error(`[explore_system] Error parsing ui_preview_configs:`, parseErr);
+            }
+          }
+
+          results.ui_pages = {
+            builder_name: builder.builder_name || builder.name,
+            count: pages.length,
+            pages: pages
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting UI pages:`, error.message);
+          results.ui_pages = { count: 0, error: error.message };
+        }
+      })(),
+
+      // 15. UI_CONTRACTS - Get detailed contract info by ID
+      ...uiContractsToGet.map(async (contractId) => {
+        try {
+          const contracts = await docApi.listDocuments(
+            client,
+            'UI Contract',
+            { contract_id: contractId },
+            ['contract_id', 'contract_type', 'component_name', 'summary', 'config_contract', 'minimal_example', 'full_example', 'usage_instructions', 'decision_tree', 'common_patterns', 'anti_patterns'],
+            1
+          );
+
+          if (contracts.length === 0) {
+            results.ui_contracts[contractId] = { exists: false };
+            return;
+          }
+
+          const contract = contracts[0];
+          results.ui_contracts[contractId] = {
+            exists: true,
+            contract_id: contract.contract_id,
+            contract_type: contract.contract_type,
+            component_name: contract.component_name,
+            summary: contract.summary,
+            config_contract: contract.config_contract ? JSON.parse(contract.config_contract) : null,
+            minimal_example: contract.minimal_example ? JSON.parse(contract.minimal_example) : null,
+            full_example: contract.full_example ? JSON.parse(contract.full_example) : null,
+            usage_instructions: contract.usage_instructions,
+            decision_tree: contract.decision_tree,
+            common_patterns: contract.common_patterns,
+            anti_patterns: contract.anti_patterns
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting UI contract ${contractId}:`, error.message);
+          results.ui_contracts[contractId] = { exists: false, error: error.message };
+        }
+      }),
+
+      // 16. AI_AGENTS - Quick check of AI agents
+      ...aiAgentsToCheck.map(async (agentName) => {
+        try {
+          const agents = await docApi.listDocuments(
+            client,
+            'AI Agent',
+            { agent_name: agentName },
+            ['agent_name', 'agent_type', 'graph_architecture', 'enabled', 'model', 'temperature', 'max_tokens', 'is_system_agent', 'is_worker_agent', 'is_whatsapp_agent', 'role_title', 'enable_mcp_tools'],
+            1
+          );
+
+          if (agents.length === 0) {
+            results.ai_agents[agentName] = { exists: false };
+            return;
+          }
+
+          const agent = agents[0];
+          // Get count of allowed tools
+          let toolCount = 0;
+          try {
+            const tools = await docApi.listDocuments(
+              client,
+              'AI Agent Allowed Tool',
+              { parent: agentName, parenttype: 'AI Agent' },
+              ['tool_name'],
+              100
+            );
+            toolCount = tools.length;
+          } catch (e) {
+            // Ignore tool count errors
+          }
+
+          results.ai_agents[agentName] = {
+            exists: true,
+            agent_name: agent.agent_name,
+            agent_type: agent.agent_type,
+            graph_architecture: agent.graph_architecture,
+            enabled: agent.enabled || false,
+            model: agent.model,
+            temperature: agent.temperature,
+            max_tokens: agent.max_tokens,
+            is_system_agent: agent.is_system_agent || false,
+            is_worker_agent: agent.is_worker_agent || false,
+            is_whatsapp_agent: agent.is_whatsapp_agent || false,
+            role_title: agent.role_title || '',
+            enable_mcp_tools: agent.enable_mcp_tools || false,
+            allowed_tools_count: toolCount
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error checking AI Agent ${agentName}:`, error.message);
+          results.ai_agents[agentName] = { exists: false, error: error.message };
+        }
+      }),
+
+      // 17. AI_AGENTS_FULL - Complete AI agent details
+      ...aiAgentsFullCheck.map(async (agentName) => {
+        try {
+          const agents = await docApi.listDocuments(
+            client,
+            'AI Agent',
+            { agent_name: agentName },
+            ['*'],
+            1
+          );
+
+          if (agents.length === 0) {
+            results.ai_agents_full[agentName] = { exists: false };
+            return;
+          }
+
+          const agent = agents[0];
+
+          // Get allowed tools
+          let allowedTools: any[] = [];
+          try {
+            allowedTools = await docApi.listDocuments(
+              client,
+              'AI Agent Allowed Tool',
+              { parent: agentName, parenttype: 'AI Agent' },
+              ['tool_name', 'enabled', 'description'],
+              100
+            );
+          } catch (e) {}
+
+          // Get workers (for planner_workers architecture)
+          let workers: any[] = [];
+          try {
+            workers = await docApi.listDocuments(
+              client,
+              'AI Agent Worker',
+              { parent: agentName, parenttype: 'AI Agent' },
+              ['worker_name', 'agent', 'description', 'enabled'],
+              50
+            );
+          } catch (e) {}
+
+          // Get stages
+          let stages: any[] = [];
+          try {
+            stages = await docApi.listDocuments(
+              client,
+              'AI Agent Stages',
+              { parent: agentName, parenttype: 'AI Agent' },
+              ['stage_id', 'stage_name', 'stage_description', 'stage_sequence', 'is_active'],
+              50
+            );
+          } catch (e) {}
+
+          // Get stage objectives
+          let stageObjectives: any[] = [];
+          try {
+            stageObjectives = await docApi.listDocuments(
+              client,
+              'AI Agent Stage Objective',
+              { parent: agentName, parenttype: 'AI Agent' },
+              ['stage_id', 'objective_id', 'objective_name', 'objective_description', 'objective_sequence', 'is_active'],
+              100
+            );
+          } catch (e) {}
+
+          // Get stage transitions
+          let stageTransitions: any[] = [];
+          try {
+            stageTransitions = await docApi.listDocuments(
+              client,
+              'AI Agent Stage Transition',
+              { parent: agentName, parenttype: 'AI Agent' },
+              ['from_stage_id', 'to_stage_id', 'transition_name', 'transition_description'],
+              100
+            );
+          } catch (e) {}
+
+          // Get stage tools
+          let stageTools: any[] = [];
+          try {
+            stageTools = await docApi.listDocuments(
+              client,
+              'AI Agent Stage Tool',
+              { parent: agentName, parenttype: 'AI Agent' },
+              ['stage_id', 'tool_name', 'enabled', 'description'],
+              100
+            );
+          } catch (e) {}
+
+          results.ai_agents_full[agentName] = {
+            exists: true,
+            agent_name: agent.agent_name,
+            agent_type: agent.agent_type,
+            graph_architecture: agent.graph_architecture,
+            enabled: agent.enabled || false,
+            is_system_agent: agent.is_system_agent || false,
+            is_worker_agent: agent.is_worker_agent || false,
+            is_whatsapp_agent: agent.is_whatsapp_agent || false,
+            accepts_files: agent.accepts_files || false,
+            // Model config
+            model: agent.model,
+            temperature: agent.temperature,
+            max_tokens: agent.max_tokens,
+            // Thinking/reasoning
+            thinking_enabled: agent.thinking_enabled || false,
+            thinking_mode: agent.thinking_mode,
+            thinking_budget: agent.thinking_budget,
+            // Caching
+            enable_caching: agent.enable_caching || false,
+            cache_min_tokens: agent.cache_min_tokens,
+            cache_ttl_seconds: agent.cache_ttl_seconds,
+            // Role
+            role_title: agent.role_title || '',
+            role_description: agent.role_description || '',
+            communication_style: agent.communication_style || '',
+            // System prompt
+            system_prompt_file: agent.system_prompt_file || '',
+            system_prompt_text: agent.system_prompt_text || '',
+            // MCP tools
+            enable_mcp_tools: agent.enable_mcp_tools || false,
+            // Child tables
+            allowed_tools: allowedTools,
+            workers: workers,
+            stages: stages,
+            stage_objectives: stageObjectives,
+            stage_transitions: stageTransitions,
+            stage_tools: stageTools,
+            // Debug
+            enable_debug: agent.enable_debug || false,
+            enable_console: agent.enable_console || false
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting full AI Agent ${agentName}:`, error.message);
+          results.ai_agents_full[agentName] = { exists: false, error: error.message };
+        }
+      }),
+
+      // 18. GRAPH_ARCHITECTURES - List available architectures
+      (async () => {
+        if (!getGraphArchitectures) return;
+        try {
+          const architectures = await docApi.listDocuments(
+            client,
+            'Graph Architecture',
+            {},
+            ['architecture_name', 'display_name', 'enabled', 'description', 'nodes', 'edges', 'entry_node', 'exit_nodes', 'python_class'],
+            20
+          );
+
+          results.graph_architectures = {
+            count: architectures.length,
+            architectures: architectures.map((a: any) => ({
+              architecture_name: a.architecture_name,
+              display_name: a.display_name,
+              enabled: a.enabled || false,
+              description: a.description || '',
+              nodes: a.nodes ? JSON.parse(a.nodes) : [],
+              edges: a.edges ? JSON.parse(a.edges) : [],
+              entry_node: a.entry_node,
+              exit_nodes: a.exit_nodes ? JSON.parse(a.exit_nodes) : [],
+              python_class: a.python_class
+            })),
+            usage_hints: {
+              'single_agent': 'Simple ReAct loop (think → act → observe). Best for straightforward tasks. Used by data_agent, ui_agent, workflow_agent.',
+              'planner_workers': 'Complex multi-agent workflow. Planner decomposes → Dispatcher routes → Workers execute → Verifier validates. Workers MUST use single_agent architecture.'
+            }
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting graph architectures:`, error.message);
+          results.graph_architectures = { count: 0, error: error.message };
+        }
+      })(),
+
+      // 19. AVAILABLE_MODELS - List AI models by provider
+      (async () => {
+        if (!getAvailableModels) return;
+        // Static list of available models with thinking support info
+        results.available_models = {
+          providers: {
+            openrouter: {
+              models: [
+                { model: 'openrouter/openai/gpt-4o-mini', thinking_support: false, description: 'Fast, cost-effective GPT-4o variant' },
+                { model: 'openrouter/openai/gpt-oss-120b', thinking_support: false, description: '120B parameter open-source model' },
+                { model: 'openrouter/openai/gpt-oss-20b', thinking_support: false, description: '20B parameter open-source model' },
+                { model: 'openrouter/deepseek/deepseek-v3.2', thinking_support: false, description: 'DeepSeek v3.2 model' },
+                { model: 'openrouter/moonshotai/kimi-k2', thinking_support: true, description: 'Kimi K2 with reasoning' },
+                { model: 'openrouter/moonshotai/kimi-k2-thinking', thinking_support: true, description: 'Kimi K2 extended thinking mode' }
+              ]
+            },
+            gemini: {
+              models: [
+                { model: 'gemini-2.0-flash', thinking_support: true, description: 'Gemini 2.0 Flash - fast with thinking' },
+                { model: 'gemini-2.0-flash-exp', thinking_support: true, description: 'Gemini 2.0 Flash experimental' },
+                { model: 'gemini/gemini-2.5-flash', thinking_support: true, description: 'Gemini 2.5 Flash' },
+                { model: 'gemini/gemini-2.5-pro', thinking_support: true, description: 'Gemini 2.5 Pro - most capable' },
+                { model: 'gemini/gemini-2.5-flash-lite', thinking_support: true, description: 'Gemini 2.5 Flash Lite - fastest' },
+                { model: 'gemini/gemini-3-pro-preview', thinking_support: true, description: 'Gemini 3.0 Pro preview' }
+              ],
+              thinking_modes: ['Dynamic', 'Custom', 'Disabled'],
+              thinking_budget_range: { min: -1, max: 24576 }
+            },
+            xai_grok: {
+              models: [
+                { model: 'xai/grok-4-1-fast-reasoning', thinking_support: true, description: 'Grok 4.1 with fast reasoning' },
+                { model: 'xai/grok-4-1-fast-non-reasoning', thinking_support: false, description: 'Grok 4.1 without reasoning' }
+              ]
+            },
+            openai: {
+              models: [
+                { model: 'openai/gpt-5-nano', thinking_support: false, description: 'GPT-5 Nano - smallest' },
+                { model: 'openai/gpt-5-mini', thinking_support: false, description: 'GPT-5 Mini' },
+                { model: 'openai/gpt-5', thinking_support: false, description: 'GPT-5 standard' },
+                { model: 'openai/gpt-5.1', thinking_support: false, description: 'GPT-5.1 latest' }
+              ]
+            }
+          },
+          recommendations: {
+            system_agents: 'openrouter/openai/gpt-oss-120b (temperature 0.3-0.7)',
+            user_agents: 'gemini/gemini-2.5-flash or openrouter/openai/gpt-4o-mini',
+            complex_reasoning: 'gemini/gemini-2.5-pro with thinking_mode: Dynamic',
+            cost_effective: 'openrouter/openai/gpt-4o-mini or gemini/gemini-2.5-flash-lite'
+          }
+        };
+      })(),
+
+      // 20. AVAILABLE_AGENT_TOOLS - List all MCP tools assignable to agents
+      (async () => {
+        if (!getAvailableAgentTools) return;
+        // Static list of available MCP tools categorized
+        results.available_agent_tools = {
+          schema_tools: [
+            { tool: 'get_doctype_schema', description: 'Get complete schema for a DocType' },
+            { tool: 'get_field_options', description: 'Get options for Link/Select fields' },
+            { tool: 'find_doctypes', description: 'Search for DocTypes by name pattern' },
+            { tool: 'get_module_list', description: 'List all Frappe modules' },
+            { tool: 'get_doctypes_in_module', description: 'List DocTypes in a specific module' },
+            { tool: 'check_doctype_exists', description: 'Check if a DocType exists' },
+            { tool: 'get_naming_info', description: 'Get naming configuration for a DocType' },
+            { tool: 'get_required_fields', description: 'Get required fields for a DocType' },
+            { tool: 'get_frappe_usage_info', description: 'Get Frappe framework usage information' }
+          ],
+          document_tools: [
+            { tool: 'create_document', description: 'Create a new document' },
+            { tool: 'get_document', description: 'Get a document by name' },
+            { tool: 'update_document', description: 'Update an existing document' },
+            { tool: 'delete_document', description: 'Delete a document' },
+            { tool: 'list_documents', description: 'List documents with filters' },
+            { tool: 'check_document_exists', description: 'Check if a document exists' },
+            { tool: 'get_document_count', description: 'Count documents matching filters' }
+          ],
+          doctype_tools: [
+            { tool: 'create_doctype', description: 'Create a new DocType' },
+            { tool: 'create_child_table', description: 'Create a child table DocType' },
+            { tool: 'add_fields_to_doctype', description: 'Add fields to existing DocType' },
+            { tool: 'delete_doctype', description: 'Delete a DocType' }
+          ],
+          workflow_tools: [
+            { tool: 'create_blueprint', description: 'Create a workflow blueprint' },
+            { tool: 'read_blueprint', description: 'Read a workflow blueprint' },
+            { tool: 'update_blueprint', description: 'Update a workflow blueprint' },
+            { tool: 'delete_blueprint', description: 'Delete a workflow blueprint' },
+            { tool: 'list_blueprints', description: 'List all workflow blueprints' },
+            { tool: 'validate_blueprint', description: 'Validate blueprint configuration' },
+            { tool: 'get_available_events', description: 'Get available trigger events' },
+            { tool: 'get_available_actions', description: 'Get available action types' }
+          ],
+          ui_tools: [
+            { tool: 'update_preview_config', description: 'Update ERP Builder UI config' },
+            { tool: 'list_ui_contracts', description: 'List available UI contracts' },
+            { tool: 'get_ui_contract', description: 'Get UI contract details' },
+            { tool: 'get_erp_builder', description: 'Get ERP Builder configuration' }
+          ],
+          agent_tools: [
+            { tool: 'create_ai_agent', description: 'Create a new AI agent' },
+            { tool: 'get_ai_agent', description: 'Get AI agent configuration' },
+            { tool: 'update_ai_agent', description: 'Update AI agent settings' },
+            { tool: 'delete_ai_agent', description: 'Delete an AI agent' },
+            { tool: 'list_ai_agents', description: 'List all AI agents' }
+          ],
+          messaging_tools: [
+            { tool: 'send_whatsapp_message', description: 'Send WhatsApp message' },
+            { tool: 'send_instagram_message', description: 'Send Instagram message' }
+          ],
+          usage_hint: 'Assign tools via the allowed_tools child table. Empty list = all tools allowed. System agents have pre-configured tool sets.'
+        };
+      })(),
+
+      // 21. SYSTEM_AGENTS - List system agent configurations
+      (async () => {
+        if (!getSystemAgents) return;
+        try {
+          const systemAgents = await docApi.listDocuments(
+            client,
+            'AI Agent',
+            { is_system_agent: 1 },
+            ['agent_name', 'agent_type', 'graph_architecture', 'enabled', 'model', 'temperature', 'max_tokens', 'role_title', 'role_description', 'enable_mcp_tools'],
+            20
+          );
+
+          // Get allowed tools for each system agent
+          const agentConfigs = await Promise.all(systemAgents.map(async (agent: any) => {
+            let tools: any[] = [];
+            try {
+              tools = await docApi.listDocuments(
+                client,
+                'AI Agent Allowed Tool',
+                { parent: agent.agent_name, parenttype: 'AI Agent' },
+                ['tool_name', 'enabled'],
+                100
+              );
+            } catch (e) {}
+
+            // Get workers for planner_workers agents
+            let workers: any[] = [];
+            if (agent.graph_architecture === 'planner_workers') {
+              try {
+                workers = await docApi.listDocuments(
+                  client,
+                  'AI Agent Worker',
+                  { parent: agent.agent_name, parenttype: 'AI Agent' },
+                  ['worker_name', 'agent', 'enabled'],
+                  20
+                );
+              } catch (e) {}
+            }
+
+            return {
+              agent_name: agent.agent_name,
+              agent_type: agent.agent_type,
+              graph_architecture: agent.graph_architecture,
+              enabled: agent.enabled || false,
+              model: agent.model,
+              temperature: agent.temperature,
+              max_tokens: agent.max_tokens,
+              role_title: agent.role_title || '',
+              role_description: agent.role_description || '',
+              enable_mcp_tools: agent.enable_mcp_tools || false,
+              tools: tools.filter((t: any) => t.enabled !== 0).map((t: any) => t.tool_name),
+              tool_count: tools.length,
+              workers: workers.map((w: any) => ({ name: w.worker_name, agent: w.agent, enabled: w.enabled }))
+            };
+          }));
+
+          results.system_agents = {
+            count: systemAgents.length,
+            agents: agentConfigs,
+            descriptions: {
+              'Express Builder': 'Master orchestrator using planner_workers architecture. Routes tasks to specialized workers.',
+              'data_agent': 'Handles DocType schema operations and document CRUD. Uses single_agent architecture.',
+              'ui_agent': 'Generates UI pages and components using ERP Builder. Uses single_agent architecture.',
+              'workflow_agent': 'Creates and manages workflow blueprints. Uses single_agent architecture.',
+              'agent_builder': 'Creates and configures custom AI agents. Uses single_agent architecture.'
+            }
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting system agents:`, error.message);
+          results.system_agents = { count: 0, error: error.message };
+        }
+      })()
     ]);
 
-    // Build summary
-    const doctypeNames = Object.keys(results.doctypes);
-    const existingDoctypes = doctypeNames.filter(k => results.doctypes[k].exists);
-    const missingDoctypes = doctypeNames.filter(k => !results.doctypes[k].exists);
+    // Build summary - collect all DocTypes checked across all parameters
+    const allDoctypesChecked = [...new Set([...doctypesToCheck, ...fieldsToGet, ...relationshipsToGet, ...doctypesFullCheck])];
+    const existingDoctypes: string[] = [];
+    const missingDoctypes: string[] = [];
 
-    const documentKeys = Object.keys(results.documents);
-    const existingDocs = documentKeys.filter(k => results.documents[k].exists);
-    const missingDocs = documentKeys.filter(k => !results.documents[k].exists);
+    for (const dt of allDoctypesChecked) {
+      const existsInAny =
+        results.doctypes[dt]?.exists ||
+        results.fields[dt]?.exists ||
+        results.relationships[dt]?.exists ||
+        results.doctypes_full[dt]?.exists;
+      if (existsInAny) {
+        existingDoctypes.push(dt);
+      } else {
+        missingDoctypes.push(dt);
+      }
+    }
 
-    const blueprintNames = Object.keys(results.blueprints);
-    const existingBlueprints = blueprintNames.filter(k => results.blueprints[k].exists);
-    const missingBlueprints = blueprintNames.filter(k => !results.blueprints[k].exists);
-
-    // Build clean response (omit null/empty sections)
+    // Build clean response (omit empty sections)
     const response: Record<string, any> = {
       summary: {
         existingDoctypes,
-        missingDoctypes,
-        existingBlueprints,
-        missingBlueprints
+        missingDoctypes
       }
     };
 
     if (Object.keys(results.doctypes).length > 0) response.doctypes = results.doctypes;
-    if (Object.keys(results.documents).length > 0) response.documents = results.documents;
-    if (Object.keys(results.blueprints).length > 0) response.blueprints = results.blueprints;
-    if (Object.keys(results.lists).length > 0) response.lists = results.lists;
-    if (results.modules) response.modules = results.modules;
-    if (results.doctypesInModule) response.doctypesInModule = results.doctypesInModule;
-    if (results.foundDoctypes) response.foundDoctypes = results.foundDoctypes;
-    if (Object.keys(results.counts).length > 0) response.counts = results.counts;
+    if (Object.keys(results.fields).length > 0) response.fields = results.fields;
+    if (Object.keys(results.relationships).length > 0) response.relationships = results.relationships;
+
+    // Only include documents if any sub-section has data
+    const hasDocumentData =
+      Object.keys(results.documents.check).length > 0 ||
+      Object.keys(results.documents.list).length > 0 ||
+      Object.keys(results.documents.count).length > 0;
+    if (hasDocumentData) {
+      response.documents = {};
+      if (Object.keys(results.documents.check).length > 0) response.documents.check = results.documents.check;
+      if (Object.keys(results.documents.list).length > 0) response.documents.list = results.documents.list;
+      if (Object.keys(results.documents.count).length > 0) response.documents.count = results.documents.count;
+    }
+
+    if (Object.keys(results.doctypes_full).length > 0) response.doctypes_full = results.doctypes_full;
+
+    // Workflow-related results (now top-level)
+    if (Object.keys(results.blueprints).length > 0) {
+      response.blueprints = results.blueprints;
+      // Add to summary
+      const existingBlueprints = Object.entries(results.blueprints)
+        .filter(([_, v]: [string, any]) => v.exists)
+        .map(([k]) => k);
+      const missingBlueprints = Object.entries(results.blueprints)
+        .filter(([_, v]: [string, any]) => !v.exists)
+        .map(([k]) => k);
+      if (existingBlueprints.length > 0 || missingBlueprints.length > 0) {
+        response.summary.existingBlueprints = existingBlueprints;
+        response.summary.missingBlueprints = missingBlueprints;
+      }
+    }
+    if (Object.keys(results.triggers_for_doctype).length > 0) {
+      response.triggers_for_doctype = results.triggers_for_doctype;
+    }
+    if (results.schedules !== null) {
+      response.schedules = results.schedules;
+    }
+    if (results.roles !== null) {
+      response.roles = results.roles;
+    }
+    if (results.available_events !== null) {
+      response.available_events = results.available_events;
+    }
+    if (results.available_actions !== null) {
+      response.available_actions = results.available_actions;
+    }
+
+    // UI results
+    if (results.ui_layouts !== null) {
+      response.ui_layouts = results.ui_layouts;
+    }
+    if (results.ui_templates !== null) {
+      response.ui_templates = results.ui_templates;
+    }
+    if (results.ui_pages !== null) {
+      response.ui_pages = results.ui_pages;
+    }
+    if (Object.keys(results.ui_contracts).length > 0) {
+      response.ui_contracts = results.ui_contracts;
+      // Add to summary
+      const existingContracts = Object.entries(results.ui_contracts)
+        .filter(([_, v]: [string, any]) => v.exists)
+        .map(([k]) => k);
+      const missingContracts = Object.entries(results.ui_contracts)
+        .filter(([_, v]: [string, any]) => !v.exists)
+        .map(([k]) => k);
+      if (existingContracts.length > 0 || missingContracts.length > 0) {
+        response.summary.existingUIContracts = existingContracts;
+        response.summary.missingUIContracts = missingContracts;
+      }
+    }
+
+    // Agent Builder results
+    if (Object.keys(results.ai_agents).length > 0) {
+      response.ai_agents = results.ai_agents;
+      // Add to summary
+      const existingAgents = Object.entries(results.ai_agents)
+        .filter(([_, v]: [string, any]) => v.exists)
+        .map(([k]) => k);
+      const missingAgents = Object.entries(results.ai_agents)
+        .filter(([_, v]: [string, any]) => !v.exists)
+        .map(([k]) => k);
+      if (existingAgents.length > 0 || missingAgents.length > 0) {
+        response.summary.existingAIAgents = existingAgents;
+        response.summary.missingAIAgents = missingAgents;
+      }
+    }
+    if (Object.keys(results.ai_agents_full).length > 0) {
+      response.ai_agents_full = results.ai_agents_full;
+    }
+    if (results.graph_architectures !== null) {
+      response.graph_architectures = results.graph_architectures;
+    }
+    if (results.available_models !== null) {
+      response.available_models = results.available_models;
+    }
+    if (results.available_agent_tools !== null) {
+      response.available_agent_tools = results.available_agent_tools;
+    }
+    if (results.system_agents !== null) {
+      response.system_agents = results.system_agents;
+    }
 
     return {
       content: [{
