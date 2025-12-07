@@ -481,6 +481,7 @@ export async function executeTool(
     const getAvailableModels: boolean = args.available_models || false;
     const getAvailableAgentTools: boolean = args.available_agent_tools || false;
     const getSystemAgents: boolean = args.system_agents || false;
+    const getAvailableFieldTypes: boolean = args.available_field_types || false;
 
     const results: Record<string, any> = {
       doctypes: {},
@@ -505,7 +506,8 @@ export async function executeTool(
       graph_architectures: null,
       available_models: null,
       available_agent_tools: null,
-      system_agents: null
+      system_agents: null,
+      available_field_types: null
     };
 
     // Helper function to check if DocType exists in DB
@@ -1658,6 +1660,68 @@ export async function executeTool(
           console.error(`[explore_system] Error getting system agents:`, error.message);
           results.system_agents = { count: 0, error: error.message };
         }
+      })(),
+
+      // 22. AVAILABLE_FIELD_TYPES - List all Frappe field types
+      (async () => {
+        if (!getAvailableFieldTypes) return;
+        try {
+          // Get field types from DocField meta
+          const metaResult = await client.call().get('frappe.client.get', {
+            doctype: 'DocField',
+            name: 'DocField-fieldtype'
+          });
+
+          // Parse the options field which contains newline-separated field types
+          const optionsField = metaResult?.message?.options || metaResult?.options || '';
+          const fieldTypes = optionsField.split('\n').filter((t: string) => t.trim());
+
+          // Categorize field types for easier understanding
+          const categories = {
+            text: ['Data', 'Small Text', 'Text', 'Long Text', 'Code', 'Text Editor', 'Markdown Editor', 'HTML Editor', 'JSON', 'Password', 'Read Only'],
+            numeric: ['Int', 'Float', 'Currency', 'Percent', 'Rating'],
+            date_time: ['Date', 'Datetime', 'Time', 'Duration'],
+            selection: ['Select', 'Check', 'Autocomplete'],
+            relationship: ['Link', 'Dynamic Link', 'Table', 'Table MultiSelect'],
+            media: ['Attach', 'Attach Image', 'Image', 'Signature', 'Barcode'],
+            layout: ['Section Break', 'Column Break', 'Tab Break', 'Fold', 'Heading'],
+            special: ['Button', 'HTML', 'Geolocation', 'Color', 'Icon', 'Phone']
+          };
+
+          results.available_field_types = {
+            total_count: fieldTypes.length,
+            all_types: fieldTypes,
+            by_category: categories,
+            common_types: ['Data', 'Link', 'Select', 'Table', 'Int', 'Float', 'Currency', 'Check', 'Date', 'Datetime', 'Text', 'Attach'],
+            note: "Use these exact type names in fieldtype property when creating/adding fields"
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting field types:`, error.message);
+          // Fallback to static list if API fails
+          results.available_field_types = {
+            total_count: 43,
+            all_types: [
+              'Autocomplete', 'Attach', 'Attach Image', 'Barcode', 'Button', 'Check', 'Code', 'Color',
+              'Column Break', 'Currency', 'Data', 'Date', 'Datetime', 'Duration', 'Dynamic Link', 'Float',
+              'Fold', 'Geolocation', 'Heading', 'HTML', 'HTML Editor', 'Icon', 'Image', 'Int', 'JSON', 'Link',
+              'Long Text', 'Markdown Editor', 'Password', 'Percent', 'Phone', 'Read Only', 'Rating',
+              'Section Break', 'Select', 'Signature', 'Small Text', 'Tab Break', 'Table', 'Table MultiSelect',
+              'Text', 'Text Editor', 'Time'
+            ],
+            by_category: {
+              text: ['Data', 'Small Text', 'Text', 'Long Text', 'Code', 'Text Editor', 'Markdown Editor', 'HTML Editor', 'JSON', 'Password', 'Read Only'],
+              numeric: ['Int', 'Float', 'Currency', 'Percent', 'Rating'],
+              date_time: ['Date', 'Datetime', 'Time', 'Duration'],
+              selection: ['Select', 'Check', 'Autocomplete'],
+              relationship: ['Link', 'Dynamic Link', 'Table', 'Table MultiSelect'],
+              media: ['Attach', 'Attach Image', 'Image', 'Signature', 'Barcode'],
+              layout: ['Section Break', 'Column Break', 'Tab Break', 'Fold', 'Heading'],
+              special: ['Button', 'HTML', 'Geolocation', 'Color', 'Icon', 'Phone']
+            },
+            common_types: ['Data', 'Link', 'Select', 'Table', 'Int', 'Float', 'Currency', 'Check', 'Date', 'Datetime', 'Text', 'Attach'],
+            note: "Use these exact type names in fieldtype property when creating/adding fields (fallback list used)"
+          };
+        }
       })()
     ]);
 
@@ -1790,6 +1854,9 @@ export async function executeTool(
     }
     if (results.system_agents !== null) {
       response.system_agents = results.system_agents;
+    }
+    if (results.available_field_types !== null) {
+      response.available_field_types = results.available_field_types;
     }
 
     return {

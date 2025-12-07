@@ -762,6 +762,10 @@ export const HELPER_TOOLS = [
         system_agents: {
           type: "boolean",
           description: "Set true to list all system agents (orchestrator, data_agent, ui_agent, workflow_agent, agent_builder) with their configurations and tools"
+        },
+        available_field_types: {
+          type: "boolean",
+          description: "Set true to list ALL available Frappe field types (43+ types including Data, Link, Select, Table, Int, Float, Currency, Check, Date, Datetime, Time, Duration, Text, Small Text, Long Text, Code, HTML, Markdown Editor, Text Editor, JSON, Attach, Attach Image, Image, Signature, Color, Rating, Barcode, Geolocation, Phone, Password, Percent, Read Only, Dynamic Link, Autocomplete, Icon, Section Break, Column Break, Tab Break, Fold, Heading, Button, HTML Editor, Table MultiSelect)"
         }
       },
       required: []
