@@ -510,29 +510,42 @@ export async function executeTool(
       available_field_types: null
     };
 
-    // Helper function to check if DocType exists in DB
-    async function checkDoctypeExists(doctype: string): Promise<boolean> {
-      const countResult = await client.call().get('frappe.client.get_count', {
-        doctype: 'DocType',
-        filters: { name: doctype }
-      });
-      const count = typeof countResult === 'object' && countResult !== null
-        ? (countResult.message ?? countResult.data ?? 0)
-        : (typeof countResult === 'number' ? countResult : 0);
-      return count > 0;
+    // Helper function to check if DocType exists in DB and get its ACTUAL name
+    // DocType names are case-sensitive, so we need to return the exact name from DB
+    async function checkDoctypeExists(doctype: string): Promise<{ exists: boolean, actualName: string | null }> {
+      try {
+        // Use get_list to find the DocType with case-insensitive LIKE match
+        const result = await client.call().get('frappe.client.get_list', {
+          doctype: 'DocType',
+          filters: [['name', 'like', doctype]],
+          fields: ['name'],
+          limit_page_length: 1
+        });
+
+        const docs = result?.message || result?.data || result || [];
+        if (Array.isArray(docs) && docs.length > 0) {
+          // Return the ACTUAL name from the database
+          return { exists: true, actualName: docs[0].name };
+        }
+        return { exists: false, actualName: null };
+      } catch (error) {
+        console.error(`[checkDoctypeExists] Error checking ${doctype}:`, error);
+        return { exists: false, actualName: null };
+      }
     }
 
     // Helper function to get child table schema
     async function getChildTableSchema(childDoctype: string): Promise<any> {
       try {
-        const exists = await checkDoctypeExists(childDoctype);
-        if (!exists) {
+        const checkResult = await checkDoctypeExists(childDoctype);
+        if (!checkResult.exists) {
           return { exists: false, doctype: childDoctype };
         }
-        const schema = await schemaApi.getDocTypeSchema(client, childDoctype);
+        const actualName = checkResult.actualName!;
+        const schema = await schemaApi.getDocTypeSchema(client, actualName);
         return {
           exists: true,
-          doctype: childDoctype,
+          doctype: actualName,  // Use actual name from DB
           field_count: schema.fields.length,
           fields: schema.fields.map((f: any) => ({
             fieldname: f.fieldname,
@@ -600,17 +613,21 @@ export async function executeTool(
       // 1. DOCTYPES - Quick existence check
       ...doctypesToCheck.map(async (doctype) => {
         try {
-          const exists = await checkDoctypeExists(doctype);
-          console.error(`[explore_system] DocType ${doctype} exists: ${exists}`);
+          const checkResult = await checkDoctypeExists(doctype);
+          console.error(`[explore_system] DocType ${doctype} exists: ${checkResult.exists}, actualName: ${checkResult.actualName}`);
 
-          if (!exists) {
+          if (!checkResult.exists) {
             results.doctypes[doctype] = { exists: false };
             return;
           }
 
-          const schema = await schemaApi.getDocTypeSchema(client, doctype);
-          results.doctypes[doctype] = {
+          const actualName = checkResult.actualName!;
+          const schema = await schemaApi.getDocTypeSchema(client, actualName);
+          // Store under the ACTUAL name from DB, and include it in the result
+          results.doctypes[actualName] = {
             exists: true,
+            name: actualName,  // Include actual name for agents to use
+            searchedAs: doctype !== actualName ? doctype : undefined,  // Only if different
             isTable: schema.istable || false,
             isSingle: schema.issingle || false,
             isCustom: schema.custom || false,
@@ -626,13 +643,14 @@ export async function executeTool(
       // 2. FIELDS - Get all fields with properties
       ...fieldsToGet.map(async (doctype) => {
         try {
-          const exists = await checkDoctypeExists(doctype);
-          if (!exists) {
+          const checkResult = await checkDoctypeExists(doctype);
+          if (!checkResult.exists) {
             results.fields[doctype] = { exists: false };
             return;
           }
 
-          const schema = await schemaApi.getDocTypeSchema(client, doctype);
+          const actualName = checkResult.actualName!;
+          const schema = await schemaApi.getDocTypeSchema(client, actualName);
           const fields = schema.fields.map((f: any, idx: number) => ({
             fieldname: f.fieldname,
             fieldtype: f.fieldtype,
@@ -654,8 +672,9 @@ export async function executeTool(
             field_summary.by_type[f.fieldtype] = (field_summary.by_type[f.fieldtype] || 0) + 1;
           }
 
-          results.fields[doctype] = {
+          results.fields[actualName] = {
             exists: true,
+            name: actualName,
             fields,
             field_summary,
             required_fields: fields.filter((f: any) => f.reqd === 1).map((f: any) => ({ fieldname: f.fieldname, fieldtype: f.fieldtype, label: f.label })),
@@ -674,13 +693,14 @@ export async function executeTool(
       // 3. RELATIONSHIPS - Get links, child tables, backlinks
       ...relationshipsToGet.map(async (doctype) => {
         try {
-          const exists = await checkDoctypeExists(doctype);
-          if (!exists) {
+          const checkResult = await checkDoctypeExists(doctype);
+          if (!checkResult.exists) {
             results.relationships[doctype] = { exists: false };
             return;
           }
 
-          const schema = await schemaApi.getDocTypeSchema(client, doctype);
+          const actualName = checkResult.actualName!;
+          const schema = await schemaApi.getDocTypeSchema(client, actualName);
 
           // Link fields (outgoing)
           const link_fields = schema.fields
@@ -695,7 +715,7 @@ export async function executeTool(
               const childSchema = await getChildTableSchema(tf.options);
               child_tables.push({
                 fieldname: tf.fieldname,
-                doctype: tf.options,
+                doctype: childSchema.doctype || tf.options,  // Use actual name from child schema
                 label: tf.label,
                 ...childSchema
               });
@@ -703,10 +723,11 @@ export async function executeTool(
           }
 
           // Backlinks (DocTypes that link TO this DocType)
-          const linked_from = await getBacklinks(doctype);
+          const linked_from = await getBacklinks(actualName);
 
-          results.relationships[doctype] = {
+          results.relationships[actualName] = {
             exists: true,
+            name: actualName,
             link_fields,
             child_tables,
             linked_from
@@ -779,15 +800,16 @@ export async function executeTool(
       // 5. DOCTYPES_FULL - Complete schema (fields + relationships + document_count + permissions)
       ...doctypesFullCheck.map(async (doctype) => {
         try {
-          const exists = await checkDoctypeExists(doctype);
-          console.error(`[explore_system] DocType FULL ${doctype} exists: ${exists}`);
+          const checkResult = await checkDoctypeExists(doctype);
+          console.error(`[explore_system] DocType FULL ${doctype} exists: ${checkResult.exists}, actualName: ${checkResult.actualName}`);
 
-          if (!exists) {
+          if (!checkResult.exists) {
             results.doctypes_full[doctype] = { exists: false };
             return;
           }
 
-          const schema = await schemaApi.getDocTypeSchema(client, doctype);
+          const actualName = checkResult.actualName!;
+          const schema = await schemaApi.getDocTypeSchema(client, actualName);
 
           // Fields with full properties
           const fields = schema.fields.map((f: any, idx: number) => ({
@@ -825,25 +847,26 @@ export async function executeTool(
           for (const tf of tableFields) {
             if (tf.options) {
               const childSchema = await getChildTableSchema(tf.options);
-              child_tables.push({ fieldname: tf.fieldname, doctype: tf.options, label: tf.label, ...childSchema });
+              child_tables.push({ fieldname: tf.fieldname, doctype: childSchema.doctype || tf.options, label: tf.label, ...childSchema });
             }
           }
 
-          // Document count
+          // Document count - use actual name
           let document_count = 0;
           try {
-            const countResult = await client.call().get('frappe.client.get_count', { doctype });
+            const countResult = await client.call().get('frappe.client.get_count', { doctype: actualName });
             document_count = typeof countResult === 'object' && countResult !== null
               ? (countResult.message ?? countResult.data ?? 0)
               : (typeof countResult === 'number' ? countResult : 0);
           } catch (e) { /* ignore */ }
 
-          // Backlinks
-          const linked_from = await getBacklinks(doctype);
+          // Backlinks - use actual name
+          const linked_from = await getBacklinks(actualName);
 
-          results.doctypes_full[doctype] = {
+          results.doctypes_full[actualName] = {
             exists: true,
-            name: doctype,
+            name: actualName,  // Actual name from DB
+            searchedAs: doctype !== actualName ? doctype : undefined,
             isTable: schema.istable || false,
             isSingle: schema.issingle || false,
             isCustom: schema.custom || false,
