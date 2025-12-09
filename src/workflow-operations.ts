@@ -145,6 +145,14 @@ export const WORKFLOW_TOOLS: Tool[] = [
             type: "object",
             properties: {}
         }
+    },
+    {
+        name: "get_available_ai_agents",
+        description: "Get list of available AI Agents from AI Agent DocType. Use this when creating blueprints with ai_agent action to find appropriate agents. Returns categorized list of enabled agents (user_agents, system_agents, worker_agents, whatsapp_agents).",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
     }
 ];
 
@@ -452,6 +460,23 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
 
             // Helper tools return data directly - check for message.success or assume success if data exists
             const hasSuccess = result?.message?.success ?? result?.success ?? (result?.actions || result?.message?.actions);
+            return {
+                content: [{
+                    type: "text",
+                    text: JSON.stringify(result, null, 2)
+                }],
+                isError: !hasSuccess
+            };
+        }
+
+        if (name === "get_available_ai_agents") {
+            const result = await callMethod(client,
+                "sentra_core.builder.tools.workflow_tools.get_available_ai_agents_util",
+                {}
+            );
+
+            // Helper tools return data directly - check for message.success or assume success if data exists
+            const hasSuccess = result?.message?.success ?? result?.success ?? (result?.agents || result?.message?.agents);
             return {
                 content: [{
                     type: "text",

@@ -1075,58 +1075,46 @@ export async function executeTool(
         }
       })(),
 
-      // 10. AVAILABLE_EVENTS - List valid Frappe event types for triggers
+      // 10. AVAILABLE_EVENTS - Query BL Trigger Registry (source of truth)
       (async () => {
         if (!getAvailableEvents) return;
-        // These are static, but useful for planner context
-        results.available_events = {
-          doc_events: [
-            'before_insert', 'after_insert',
-            'before_validate', 'validate',
-            'before_save', 'after_save',
-            'on_update',
-            'before_submit', 'on_submit',
-            'before_cancel', 'on_cancel',
-            'before_update_after_submit', 'on_update_after_submit',
-            'on_trash', 'after_delete',
-            'on_change'
-          ],
-          common_events: {
-            'after_insert': 'When document is created',
-            'on_update': 'When document is updated/saved',
-            'on_submit': 'When submittable document is submitted',
-            'on_trash': 'When document is deleted'
-          },
-          schedule_trigger: {
-            description: 'Use trigger_type: "schedule" with cron expression',
-            example: { trigger_type: 'schedule', cron: '0 9 * * *', timezone: 'Asia/Kolkata' }
+        try {
+          const response = await docApi.callMethod(
+            client,
+            'sentra_core.builder.tools.workflow_tools.get_available_events_util',
+            {}
+          );
+          if (response?.success) {
+            results.available_events = response.events;
+          } else {
+            console.error(`[explore_system] Error getting available events:`, response?.error);
+            results.available_events = { error: response?.error || 'Failed to get events' };
           }
-        };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting available events:`, error.message);
+          results.available_events = { error: error.message };
+        }
       })(),
 
-      // 11. AVAILABLE_ACTIONS - List supported action types
+      // 11. AVAILABLE_ACTIONS - Query BL Action Registry (source of truth)
       (async () => {
         if (!getAvailableActions) return;
-        // These are static, but useful for planner context
-        results.available_actions = {
-          crud: ['read_document', 'create_document', 'update_document', 'delete_document', 'list_documents'],
-          logic: ['calculate', 'if', 'switch'],
-          notifications: ['send_notification', 'send_whatsapp_message', 'send_instagram_message', 'console_log'],
-          integrations: ['ai_agent', 'vendor_action', 'call_function'],
-          vendor_shortcuts: [
-            'slack_send_message', 'discord_send_message', 'telegram_send_message',
-            'notion_create_page', 'google_sheets_add_row', 'airtable_create_record',
-            'trello_create_card', 'hubspot_create_contact'
-          ],
-          required_params: {
-            'send_notification': ['recipients', 'subject', 'message'],
-            'if': ['condition', 'then'],
-            'switch': ['field', 'cases'],
-            'create_document': ['doctype', 'fields'],
-            'update_document': ['name', 'fields'],
-            'read_document': ['doctype', 'name']
+        try {
+          const response = await docApi.callMethod(
+            client,
+            'sentra_core.builder.tools.workflow_tools.get_available_actions_util',
+            {}
+          );
+          if (response?.success) {
+            results.available_actions = response.actions;
+          } else {
+            console.error(`[explore_system] Error getting available actions:`, response?.error);
+            results.available_actions = { error: response?.error || 'Failed to get actions' };
           }
-        };
+        } catch (error: any) {
+          console.error(`[explore_system] Error getting available actions:`, error.message);
+          results.available_actions = { error: error.message };
+        }
       })(),
 
       // 12. UI_LAYOUTS - List available layout contracts
@@ -2225,6 +2213,21 @@ export async function executeTool(
     const result = await docApi.callMethod(
       client,
       "sentra_core.builder.tools.workflow_tools.get_available_actions_util",
+      {}
+    );
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result, null, 2)
+      }],
+      isError: !getSuccess(result)
+    };
+  }
+
+  if (toolName === "get_available_ai_agents") {
+    const result = await docApi.callMethod(
+      client,
+      "sentra_core.builder.tools.workflow_tools.get_available_ai_agents_util",
       {}
     );
     return {

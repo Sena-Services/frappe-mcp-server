@@ -14,7 +14,7 @@ import axios from 'axios';
 
 // Configuration
 const MCP_URL = process.env.MCP_URL || 'http://127.0.0.1:4000/mcp';
-const SITE_NAME = process.env.SITE_NAME || 'sentrav0.1.localhost';
+const SITE_NAME = process.env.SITE_NAME || 'localhost';
 const PARALLEL_COUNT = parseInt(process.env.PARALLEL_COUNT || '10', 10);
 
 // Track results
