@@ -32,11 +32,14 @@ export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
                         type: "object",
                         properties: {
                             fieldname: { type: "string", description: "Field name in snake_case. NEVER use: name, owner, creation, modified, docstatus, idx, parent, parenttype, parentfield. Use product_name, customer_name, etc." },
-                            fieldtype: { type: "string", description: "Frappe field type (Data, Select, Link, Text, Int, etc.)" },
+                            fieldtype: {
+                                type: "string",
+                                description: "Frappe field type. Valid types: Data, Text, Small Text, Long Text, Int, Float, Currency, Percent, Check, Date, Datetime, Time, Duration, Select, Link, Dynamic Link, Table, Table MultiSelect, Attach, Attach Image, Image, Signature, Color, Barcode, Geolocation, Rating, Password, Read Only, HTML, HTML Editor, Text Editor, Markdown Editor, Code, JSON, Phone, Autocomplete, Icon. For Data fields, use 'options' for validation: Email, URL, Name, Phone, Barcode, IBAN."
+                            },
                             label: { type: "string", description: "Human-readable label" },
                             reqd: { type: "number", description: "Required field (0 or 1)", default: 0 },
                             unique: { type: "number", description: "Unique field (0 or 1)", default: 0 },
-                            options: { type: "string", description: "Options for Select/Link fields", default: "" },
+                            options: { type: "string", description: "For Select: newline-separated options (e.g., 'Draft\\nActive\\nClosed'). For Link: target DocType name. For Data: validation type (Email, URL, Name, Phone, Barcode, IBAN). For Rating: max stars (e.g., '5').", default: "" },
                             read_only: { type: "number", description: "Read-only field - cannot be edited in forms (0 or 1)", default: 0 },
                             hidden: { type: "number", description: "Hidden field - not visible in UI (0 or 1)", default: 0 },
                             default: { type: "string", description: "Default value for the field" },

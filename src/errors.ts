@@ -84,7 +84,57 @@ export class FrappeApiError extends Error {
 export function handleApiError(error: any, operation: string): never {
   if (error.isAxiosError) {
     throw FrappeApiError.fromAxiosError(error, operation);
-  } else {
+  }
+  // Handle frappe-js-sdk errors (plain objects with httpStatus)
+  else if (error.httpStatus !== undefined) {
+    // Extract the actual error from frappe-js-sdk response
+    let message = `Error during ${operation}: `;
+    let serverMessageText = '';
+
+    // Parse _server_messages if present
+    if (error._server_messages) {
+      try {
+        const serverMessages = typeof error._server_messages === 'string'
+          ? JSON.parse(error._server_messages)
+          : error._server_messages;
+        const parsedMessages = Array.isArray(serverMessages)
+          ? serverMessages.map((msg: string) => {
+              try {
+                const parsed = JSON.parse(msg);
+                return parsed.message || msg;
+              } catch {
+                return msg;
+              }
+            })
+          : [serverMessages];
+        serverMessageText = parsedMessages.join('; ');
+      } catch {
+        serverMessageText = String(error._server_messages);
+      }
+    }
+
+    if (serverMessageText) {
+      message += serverMessageText;
+    } else if (error.exception) {
+      message += error.exception;
+    } else {
+      message += error.message || 'Unknown error';
+    }
+
+    throw new FrappeApiError(
+      message,
+      error.httpStatus,
+      undefined,
+      {
+        httpStatus: error.httpStatus,
+        httpStatusText: error.httpStatusText,
+        exception: error.exception,
+        serverMessages: serverMessageText || null,
+        exc: error.exc ? String(error.exc).substring(0, 500) : null
+      }
+    );
+  }
+  else {
     throw new FrappeApiError(
       `Error during ${operation}: ${(error as Error).message || 'Unknown error'}`,
       undefined, // statusCode

@@ -1703,8 +1703,20 @@ export async function executeTool(
             total_count: fieldTypes.length,
             all_types: fieldTypes,
             by_category: categories,
-            common_types: ['Data', 'Link', 'Select', 'Table', 'Int', 'Float', 'Currency', 'Check', 'Date', 'Datetime', 'Text', 'Attach'],
-            note: "Use these exact type names in fieldtype property when creating/adding fields"
+            common_types: ['Data', 'Link', 'Select', 'Table', 'Int', 'Float', 'Currency', 'Check', 'Date', 'Datetime', 'Text', 'Attach', 'Phone', 'Attach Image', 'Rating'],
+            data_field_validation_options: {
+              description: "For Data fieldtype, set 'options' property to enable validation",
+              valid_options: ['Email', 'URL', 'Name', 'Phone', 'Barcode', 'IBAN'],
+              examples: [
+                { fieldtype: 'Data', options: 'Email', description: 'Validates email format' },
+                { fieldtype: 'Data', options: 'URL', description: 'Validates URL format' },
+                { fieldtype: 'Data', options: 'Name', description: 'Validates name characters' },
+                { fieldtype: 'Data', options: 'Phone', description: 'Validates phone format (prefer Phone fieldtype instead)' },
+                { fieldtype: 'Data', options: 'Barcode', description: 'Validates barcode format' },
+                { fieldtype: 'Data', options: 'IBAN', description: 'Validates bank account format' }
+              ]
+            },
+            note: "Use these exact type names in fieldtype property when creating/adding fields. For email/url/name validation, use Data with options."
           };
         } catch (error: any) {
           console.error(`[explore_system] Error getting field types:`, error.message);
@@ -1729,8 +1741,20 @@ export async function executeTool(
               layout: ['Section Break', 'Column Break', 'Tab Break', 'Fold', 'Heading'],
               special: ['Button', 'HTML', 'Geolocation', 'Color', 'Icon', 'Phone']
             },
-            common_types: ['Data', 'Link', 'Select', 'Table', 'Int', 'Float', 'Currency', 'Check', 'Date', 'Datetime', 'Text', 'Attach'],
-            note: "Use these exact type names in fieldtype property when creating/adding fields (fallback list used)"
+            common_types: ['Data', 'Link', 'Select', 'Table', 'Int', 'Float', 'Currency', 'Check', 'Date', 'Datetime', 'Text', 'Attach', 'Phone', 'Attach Image', 'Rating'],
+            data_field_validation_options: {
+              description: "For Data fieldtype, set 'options' property to enable validation",
+              valid_options: ['Email', 'URL', 'Name', 'Phone', 'Barcode', 'IBAN'],
+              examples: [
+                { fieldtype: 'Data', options: 'Email', description: 'Validates email format' },
+                { fieldtype: 'Data', options: 'URL', description: 'Validates URL format' },
+                { fieldtype: 'Data', options: 'Name', description: 'Validates name characters' },
+                { fieldtype: 'Data', options: 'Phone', description: 'Validates phone format (prefer Phone fieldtype instead)' },
+                { fieldtype: 'Data', options: 'Barcode', description: 'Validates barcode format' },
+                { fieldtype: 'Data', options: 'IBAN', description: 'Validates bank account format' }
+              ]
+            },
+            note: "Use these exact type names in fieldtype property when creating/adding fields. For email/url/name validation, use Data with options. (fallback list used)"
           };
         }
       })()
