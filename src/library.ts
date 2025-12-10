@@ -1910,7 +1910,7 @@ export async function executeTool(
       "sentra_core.builder.tools.data_tools.create_doctype_util",
       {
         name: args.name,
-        fields: args.fields,
+        fields: args.fields || [],  // Allow empty fields
         module: args.module || "Sentra Core",
         naming_rule: args.naming_rule || "By fieldname",
         autoname: args.autoname

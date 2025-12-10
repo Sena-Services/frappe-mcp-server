@@ -67,7 +67,7 @@ export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
                     description: "Field to use for naming (e.g., 'field:customer_name'). If not provided, uses first field. IMPORTANT: Must reference a Data or Int field with unique=1. Do NOT use Date, Datetime, Text, or restricted fieldnames (name, owner, etc.). Prefer omitting this to auto-use first field, or use patterns like 'PROD-.####' for auto-increment."
                 }
             },
-            required: ["name", "fields"]
+            required: ["name"]
         }
     },
     {
@@ -189,8 +189,8 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
         };
 
         if (name === "create_doctype") {
-            if (!args || !args.name || !args.fields) {
-                throw new Error("Missing required arguments: name and fields are required");
+            if (!args || !args.name) {
+                throw new Error("Missing required argument: name is required");
             }
 
             // Call the Frappe backend method
@@ -199,7 +199,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
                 "sentra_core.builder.tools.data_tools.create_doctype_util",
                 {
                     name: args.name,
-                    fields: args.fields,
+                    fields: args.fields || [],  // Allow empty fields
                     module: args.module || "Sentra Core",
                     naming_rule: args.naming_rule || "By fieldname",
                     autoname: args.autoname || null
