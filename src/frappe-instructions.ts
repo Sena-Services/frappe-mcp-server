@@ -635,6 +635,23 @@ export const HELPER_TOOLS = [
           items: { type: "string" },
           description: "DocType names for QUICK existence check - returns exists, isTable, isCustom, autoname, fieldCount"
         },
+        list_all_doctypes: {
+          type: "boolean",
+          description: "Set true to get a simple list of ALL custom DocTypes in the system (name only). Use this when you need to show user what exists or find a DocType by browsing."
+        },
+        find_doctypes: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              search_term: { type: "string", description: "Search term for DocType name (uses LIKE %term%)" },
+              module: { type: "string", description: "Filter by module name (e.g., 'Sentra Core')" },
+              is_custom: { type: "boolean", description: "Filter by custom DocTypes only" },
+              limit: { type: "number", description: "Max results (default 50)" }
+            }
+          },
+          description: "Search for DocTypes by name pattern and/or module. Use {module: 'Sentra Core'} to get all custom DocTypes, or {search_term: 'test'} for fuzzy search, or combine both."
+        },
         fields: {
           type: "array",
           items: { type: "string" },

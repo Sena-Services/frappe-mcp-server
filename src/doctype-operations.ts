@@ -154,6 +154,24 @@ export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
             },
             required: ["doctype_name"]
         }
+    },
+    {
+        name: "rename_doctype",
+        description: "Rename a custom DocType. This is the CORRECT way to rename - it updates the DocType name, database table name, and all references (Link fields, child tables, etc.). NEVER delete and recreate to rename - always use this tool instead. Name validation: Must start with letter, only letters/numbers/spaces allowed, use Title Case (e.g., 'Customer Order', 'Sales Invoice').",
+        inputSchema: {
+            type: "object",
+            properties: {
+                old_name: {
+                    type: "string",
+                    description: "Current name of the DocType to rename"
+                },
+                new_name: {
+                    type: "string",
+                    description: "New name for the DocType. MUST follow naming rules: Start with letter, only letters/numbers/spaces, Title Case (e.g., 'Customer Order', 'Product Category'). NO special characters like hyphens, underscores, or symbols."
+                }
+            },
+            required: ["old_name", "new_name"]
+        }
     }
 ];
 

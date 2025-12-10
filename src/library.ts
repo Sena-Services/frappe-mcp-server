@@ -455,6 +455,8 @@ export async function executeTool(
 
     // Parse all parameters (now 11 top-level params)
     const doctypesToCheck: string[] = args.doctypes || [];
+    const listAllDoctypes: boolean = args.list_all_doctypes || false;
+    const findDoctypesSearches: Array<{search_term?: string, module?: string, is_custom?: boolean, limit?: number}> = args.find_doctypes || [];
     const fieldsToGet: string[] = args.fields || [];
     const relationshipsToGet: string[] = args.relationships || [];
     const documentsArg: { check?: Array<{doctype: string, name: string}>, list?: Array<{doctype: string, filters?: any, limit?: number}>, count?: Array<{doctype: string, filters?: any}> } = args.documents || {};
@@ -485,6 +487,8 @@ export async function executeTool(
 
     const results: Record<string, any> = {
       doctypes: {},
+      all_doctypes: null,
+      find_doctypes: {},
       fields: {},
       relationships: {},
       documents: { check: {}, list: {}, count: {} },
@@ -637,6 +641,63 @@ export async function executeTool(
         } catch (error: any) {
           console.error(`[explore_system] Error checking ${doctype}:`, error.message);
           results.doctypes[doctype] = { exists: false };
+        }
+      }),
+
+      // 1a. LIST_ALL_DOCTYPES - Simple list of all custom DocTypes
+      (async () => {
+        if (!listAllDoctypes) return;
+        try {
+          const result: any = await docApi.listDocuments(
+            client,
+            "DocType",
+            { custom: 1 },
+            ["name"],
+            200
+          );
+          const doctypeList = Array.isArray(result) ? result : (result.data || []);
+          results.all_doctypes = doctypeList.map((d: any) => d.name);
+        } catch (error: any) {
+          console.error(`[explore_system] Error listing all doctypes:`, error.message);
+          results.all_doctypes = { error: error.message };
+        }
+      })(),
+
+      // 1b. FIND_DOCTYPES - Search for DocTypes by pattern/module
+      ...findDoctypesSearches.map(async (search, idx) => {
+        try {
+          const filters: any = {};
+          if (search.search_term) {
+            filters.name = ["like", `%${search.search_term}%`];
+          }
+          if (search.module) {
+            filters.module = search.module;
+          }
+          if (search.is_custom !== undefined) {
+            filters.custom = search.is_custom ? 1 : 0;
+          }
+
+          const result: any = await docApi.listDocuments(
+            client,
+            "DocType",
+            filters,
+            ["name", "module", "custom", "issingle", "istable"],
+            search.limit || 50
+          );
+
+          const key = search.search_term || search.module || `search_${idx}`;
+          const doctypeList = Array.isArray(result) ? result : (result.data || []);
+          results.find_doctypes[key] = {
+            search_term: search.search_term,
+            module: search.module,
+            is_custom: search.is_custom,
+            count: doctypeList.length,
+            doctypes: doctypeList
+          };
+        } catch (error: any) {
+          console.error(`[explore_system] Error in find_doctypes:`, error.message);
+          const key = search.search_term || search.module || `search_${idx}`;
+          results.find_doctypes[key] = { error: error.message, doctypes: [] };
         }
       }),
 
@@ -1567,6 +1628,7 @@ export async function executeTool(
             { tool: 'create_doctype', description: 'Create a new DocType' },
             { tool: 'create_child_table', description: 'Create a child table DocType' },
             { tool: 'add_fields_to_doctype', description: 'Add fields to existing DocType' },
+            { tool: 'rename_doctype', description: 'Rename a DocType (updates name, table, and all references)' },
             { tool: 'delete_doctype', description: 'Delete a DocType' }
           ],
           workflow_tools: [
@@ -1787,6 +1849,8 @@ export async function executeTool(
     };
 
     if (Object.keys(results.doctypes).length > 0) response.doctypes = results.doctypes;
+    if (results.all_doctypes !== null) response.all_doctypes = results.all_doctypes;
+    if (Object.keys(results.find_doctypes).length > 0) response.find_doctypes = results.find_doctypes;
     if (Object.keys(results.fields).length > 0) response.fields = results.fields;
     if (Object.keys(results.relationships).length > 0) response.relationships = results.relationships;
 
@@ -1981,6 +2045,25 @@ export async function executeTool(
         text: JSON.stringify(result, null, 2)
       }],
       isError: false
+    };
+  }
+
+  if (toolName === "rename_doctype") {
+    // Use the existing rename_doctype API from sentra_core
+    const result = await docApi.callMethod(
+      client,
+      "sentra_core.api.builder.get_doctypes.rename_doctype",
+      {
+        old_name: args.old_name,
+        new_name: args.new_name
+      }
+    );
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result, null, 2)
+      }],
+      isError: !getSuccess(result)
     };
   }
 
