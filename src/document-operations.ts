@@ -85,6 +85,28 @@ function formatErrorResponse(error: any, operation: string): any {
       statusText: error.response?.statusText,
       url: error.config?.url,
       method: error.config?.method,
+      responseData: error.response?.data,
+      diagnostics: diagnostics
+    };
+  }
+  // Check for frappe-js-sdk errors (thrown as plain objects with httpStatus)
+  else if (error.httpStatus !== undefined) {
+    // frappe-js-sdk throws objects with httpStatus, httpStatusText, message, exception
+    // The actual Frappe error is in the rest of the object
+    const frappeError = error.exc || error._server_messages || error.exception || '';
+    const serverMessages = error._server_messages ?
+      (typeof error._server_messages === 'string' ?
+        JSON.parse(error._server_messages).map((m: string) => JSON.parse(m).message || m).join('; ') :
+        error._server_messages) :
+      null;
+
+    errorMessage = `Error in ${operation}: ${serverMessages || error.exception || error.message || 'Unknown error'}`;
+    errorDetails = {
+      httpStatus: error.httpStatus,
+      httpStatusText: error.httpStatusText,
+      exception: error.exception,
+      serverMessages: serverMessages,
+      exc: frappeError ? String(frappeError).substring(0, 500) : null,
       diagnostics: diagnostics
     };
   }
@@ -92,6 +114,7 @@ function formatErrorResponse(error: any, operation: string): any {
   else {
     errorMessage = `Error in ${operation}: ${error.message || 'Unknown error'}`;
     errorDetails = {
+      errorKeys: Object.keys(error),
       diagnostics: diagnostics
     };
   }

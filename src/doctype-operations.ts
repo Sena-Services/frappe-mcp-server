@@ -32,11 +32,22 @@ export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
                         type: "object",
                         properties: {
                             fieldname: { type: "string", description: "Field name in snake_case. NEVER use: name, owner, creation, modified, docstatus, idx, parent, parenttype, parentfield. Use product_name, customer_name, etc." },
-                            fieldtype: { type: "string", description: "Frappe field type (Data, Select, Link, Text, Int, etc.)" },
+                            fieldtype: {
+                                type: "string",
+                                description: "Frappe field type. Valid types: Data, Text, Small Text, Long Text, Int, Float, Currency, Percent, Check, Date, Datetime, Time, Duration, Select, Link, Dynamic Link, Table, Table MultiSelect, Attach, Attach Image, Image, Signature, Color, Barcode, Geolocation, Rating, Password, Read Only, HTML, HTML Editor, Text Editor, Markdown Editor, Code, JSON, Phone, Autocomplete, Icon. For Data fields, use 'options' for validation: Email, URL, Name, Phone, Barcode, IBAN."
+                            },
                             label: { type: "string", description: "Human-readable label" },
                             reqd: { type: "number", description: "Required field (0 or 1)", default: 0 },
                             unique: { type: "number", description: "Unique field (0 or 1)", default: 0 },
-                            options: { type: "string", description: "Options for Select/Link fields", default: "" }
+                            options: { type: "string", description: "For Select: newline-separated options (e.g., 'Draft\\nActive\\nClosed'). For Link: target DocType name. For Data: validation type (Email, URL, Name, Phone, Barcode, IBAN). For Rating: max stars (e.g., '5').", default: "" },
+                            read_only: { type: "number", description: "Read-only field - cannot be edited in forms (0 or 1)", default: 0 },
+                            hidden: { type: "number", description: "Hidden field - not visible in UI (0 or 1)", default: 0 },
+                            default: { type: "string", description: "Default value for the field" },
+                            description: { type: "string", description: "Field help text shown below the field" },
+                            in_list_view: { type: "number", description: "Show in list view (0 or 1)", default: 0 },
+                            in_standard_filter: { type: "number", description: "Show in standard filters (0 or 1)", default: 0 },
+                            bold: { type: "number", description: "Bold label (0 or 1)", default: 0 },
+                            allow_on_submit: { type: "number", description: "Allow editing after submit (0 or 1)", default: 0 }
                         },
                         required: ["fieldname", "fieldtype", "label"]
                     }
@@ -56,7 +67,7 @@ export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
                     description: "Field to use for naming (e.g., 'field:customer_name'). If not provided, uses first field. IMPORTANT: Must reference a Data or Int field with unique=1. Do NOT use Date, Datetime, Text, or restricted fieldnames (name, owner, etc.). Prefer omitting this to auto-use first field, or use patterns like 'PROD-.####' for auto-increment."
                 }
             },
-            required: ["name", "fields"]
+            required: ["name"]
         }
     },
     {
@@ -90,7 +101,11 @@ export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
                 },
                 parent_field_label: {
                     type: "string",
-                    description: "Label for the field in parent DocType (optional, auto-generated if not provided)"
+                    description: "Label for the Table field in parent DocType (optional, auto-generated from child_doctype_name if not provided)"
+                },
+                parent_fieldname: {
+                    type: "string",
+                    description: "Fieldname for the Table field in parent DocType (e.g., 'milestones', 'attachments'). Optional - if not provided, derived from child_doctype_name (e.g., 'Project Milestone' → 'project_milestone')"
                 }
             },
             required: ["parent_doctype", "child_doctype_name", "child_fields"]
@@ -139,6 +154,24 @@ export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
             },
             required: ["doctype_name"]
         }
+    },
+    {
+        name: "rename_doctype",
+        description: "Rename a custom DocType. This is the CORRECT way to rename - it updates the DocType name, database table name, and all references (Link fields, child tables, etc.). NEVER delete and recreate to rename - always use this tool instead. Name validation: Must start with letter, only letters/numbers/spaces allowed, use Title Case (e.g., 'Customer Order', 'Sales Invoice').",
+        inputSchema: {
+            type: "object",
+            properties: {
+                old_name: {
+                    type: "string",
+                    description: "Current name of the DocType to rename"
+                },
+                new_name: {
+                    type: "string",
+                    description: "New name for the DocType. MUST follow naming rules: Start with letter, only letters/numbers/spaces, Title Case (e.g., 'Customer Order', 'Product Category'). NO special characters like hyphens, underscores, or symbols."
+                }
+            },
+            required: ["old_name", "new_name"]
+        }
     }
 ];
 
@@ -167,9 +200,15 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
     try {
         console.error(`Handling DocType operation tool: ${name} with args:`, args);
 
+        // Helper function to extract success from Frappe API response
+        // Frappe returns { message: { success: true/false, ... } } OR { success: true/false, ... }
+        const getSuccess = (result: any): boolean => {
+            return result?.message?.success ?? result?.success ?? false;
+        };
+
         if (name === "create_doctype") {
-            if (!args || !args.name || !args.fields) {
-                throw new Error("Missing required arguments: name and fields are required");
+            if (!args || !args.name) {
+                throw new Error("Missing required argument: name is required");
             }
 
             // Call the Frappe backend method
@@ -178,7 +217,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
                 "sentra_core.builder.tools.data_tools.create_doctype_util",
                 {
                     name: args.name,
-                    fields: args.fields,
+                    fields: args.fields || [],  // Allow empty fields
                     module: args.module || "Sentra Core",
                     naming_rule: args.naming_rule || "By fieldname",
                     autoname: args.autoname || null
@@ -190,7 +229,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !getSuccess(result)
             };
         }
 
@@ -215,7 +254,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !getSuccess(result)
             };
         }
 
@@ -238,7 +277,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !getSuccess(result)
             };
         }
 
@@ -260,7 +299,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !getSuccess(result)
             };
         }
 

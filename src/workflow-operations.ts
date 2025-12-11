@@ -26,7 +26,11 @@ export const WORKFLOW_TOOLS: Tool[] = [
                 },
                 actions: {
                     type: "string",
-                    description: "JSON string array of action definitions. Each action must have: action_type (string), execution_order (optional number), parameters (object)"
+                    description: "JSON string array of action definitions. Each action is an object like {\"action_name\": {params}}. For complex nested logic, use @group_name references and define groups in action_groups parameter."
+                },
+                action_groups: {
+                    type: "string",
+                    description: "JSON string object mapping group names to action arrays. Use for complex nested IF/SWITCH logic. Example: {\"handle_bug\": [{\"send_notification\": {...}}]}. Reference groups in actions using \"@group_name\" strings."
                 },
                 description: {
                     type: "string",
@@ -141,6 +145,14 @@ export const WORKFLOW_TOOLS: Tool[] = [
             type: "object",
             properties: {}
         }
+    },
+    {
+        name: "get_available_ai_agents",
+        description: "Get list of available AI Agents from AI Agent DocType. Use this when creating blueprints with ai_agent action to find appropriate agents. Returns categorized list of enabled agents (user_agents, system_agents, worker_agents, whatsapp_agents).",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
     }
 ];
 
@@ -170,13 +182,100 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
     try {
         console.error(`Handling workflow tool: ${name} with args:`, args);
 
+        // Helper function to extract success from Frappe API response
+        // Frappe returns { message: { success: true/false, ... } }
+        const getSuccess = (result: any): boolean => {
+            return result?.message?.success ?? result?.success ?? false;
+        };
+
+        /**
+         * Validate JSON string and return detailed error with fix suggestions
+         */
+        const validateJsonWithHelp = (jsonStr: string, fieldName: string): { valid: boolean; error?: string; suggestion?: string } => {
+            try {
+                JSON.parse(jsonStr);
+                return { valid: true };
+            } catch (e: any) {
+                const errorMsg = e.message || 'Unknown JSON error';
+                const match = errorMsg.match(/position (\d+)/i) || errorMsg.match(/column (\d+)/i);
+                const position = match ? parseInt(match[1]) : null;
+
+                // Count brackets to find mismatches
+                let openCurly = 0, closeCurly = 0, openSquare = 0, closeSquare = 0;
+                for (const c of jsonStr) {
+                    if (c === '{') openCurly++;
+                    if (c === '}') closeCurly++;
+                    if (c === '[') openSquare++;
+                    if (c === ']') closeSquare++;
+                }
+
+                let suggestion = '';
+                if (openCurly > closeCurly) {
+                    suggestion = `Missing ${openCurly - closeCurly} closing brace(s) "}". Each action object needs: {"action_name": {...}} - make sure every { has a matching }.`;
+                } else if (openCurly < closeCurly) {
+                    suggestion = `Extra ${closeCurly - openCurly} closing brace(s) "}". Remove the extra }.`;
+                } else if (openSquare > closeSquare) {
+                    suggestion = `Missing ${openSquare - closeSquare} closing bracket(s) "]".`;
+                } else if (openSquare < closeSquare) {
+                    suggestion = `Extra ${closeSquare - openSquare} closing bracket(s) "]".`;
+                }
+
+                // Show context around the error
+                let context = '';
+                if (position !== null && position < jsonStr.length) {
+                    const start = Math.max(0, position - 40);
+                    const end = Math.min(jsonStr.length, position + 40);
+                    context = `\n\nError location: ...${jsonStr.slice(start, position)}<<<HERE>>>${jsonStr.slice(position, end)}...`;
+                }
+
+                return {
+                    valid: false,
+                    error: `Invalid JSON in ${fieldName}: ${errorMsg}${context}`,
+                    suggestion: suggestion || 'Check that all brackets are properly matched and all strings are quoted with double quotes.'
+                };
+            }
+        };
+
         // All workflow tools delegate to builder/tools/workflow_tools.py
         if (name === "create_blueprint") {
             if (!args || !args.name || !args.triggers || !args.actions) {
                 throw new Error("Missing required arguments: name, triggers, and actions are required");
             }
 
-            const result = await callMethod(client, 
+            // Pre-validate JSON before sending to backend
+            const triggersValidation = validateJsonWithHelp(args.triggers as string, 'triggers');
+            if (!triggersValidation.valid) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            success: false,
+                            error: triggersValidation.error,
+                            suggestion: triggersValidation.suggestion,
+                            fix_hint: "Triggers should be: [{\"doctype\": \"DocTypeName\", \"event\": \"after_insert\"}]"
+                        }, null, 2)
+                    }],
+                    isError: true
+                };
+            }
+
+            const actionsValidation = validateJsonWithHelp(args.actions as string, 'actions');
+            if (!actionsValidation.valid) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            success: false,
+                            error: actionsValidation.error,
+                            suggestion: actionsValidation.suggestion,
+                            fix_hint: "Each action needs proper closing: {\"action_name\": {\"param\": \"value\"}} - note the TWO closing braces }}"
+                        }, null, 2)
+                    }],
+                    isError: true
+                };
+            }
+
+            const result = await callMethod(client,
                 "sentra_core.builder.tools.workflow_tools.create_blueprint_util",
                 {
                     name: args.name,
@@ -192,7 +291,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !getSuccess(result)
             };
         }
 
@@ -201,7 +300,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
                 throw new Error("Missing required argument: blueprint_id");
             }
 
-            const result = await callMethod(client, 
+            const result = await callMethod(client,
                 "sentra_core.builder.tools.workflow_tools.read_blueprint_util",
                 {
                     blueprint_id: args.blueprint_id
@@ -213,7 +312,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !getSuccess(result)
             };
         }
 
@@ -222,7 +321,42 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
                 throw new Error("Missing required argument: blueprint_id");
             }
 
-            const result = await callMethod(client, 
+            // Pre-validate JSON if provided
+            if (args.triggers) {
+                const triggersValidation = validateJsonWithHelp(args.triggers as string, 'triggers');
+                if (!triggersValidation.valid) {
+                    return {
+                        content: [{
+                            type: "text",
+                            text: JSON.stringify({
+                                success: false,
+                                error: triggersValidation.error,
+                                suggestion: triggersValidation.suggestion
+                            }, null, 2)
+                        }],
+                        isError: true
+                    };
+                }
+            }
+
+            if (args.actions) {
+                const actionsValidation = validateJsonWithHelp(args.actions as string, 'actions');
+                if (!actionsValidation.valid) {
+                    return {
+                        content: [{
+                            type: "text",
+                            text: JSON.stringify({
+                                success: false,
+                                error: actionsValidation.error,
+                                suggestion: actionsValidation.suggestion
+                            }, null, 2)
+                        }],
+                        isError: true
+                    };
+                }
+            }
+
+            const result = await callMethod(client,
                 "sentra_core.builder.tools.workflow_tools.update_blueprint_util",
                 {
                     blueprint_id: args.blueprint_id,
@@ -238,7 +372,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !getSuccess(result)
             };
         }
 
@@ -247,7 +381,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
                 throw new Error("Missing required argument: blueprint_id");
             }
 
-            const result = await callMethod(client, 
+            const result = await callMethod(client,
                 "sentra_core.builder.tools.workflow_tools.delete_blueprint_util",
                 {
                     blueprint_id: args.blueprint_id
@@ -259,12 +393,12 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !getSuccess(result)
             };
         }
 
         if (name === "list_blueprints") {
-            const result = await callMethod(client, 
+            const result = await callMethod(client,
                 "sentra_core.builder.tools.workflow_tools.list_blueprints_util",
                 {
                     filters: args?.filters || null
@@ -276,7 +410,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !getSuccess(result)
             };
         }
 
@@ -285,7 +419,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
                 throw new Error("Missing required argument: blueprint_json");
             }
 
-            const result = await callMethod(client, 
+            const result = await callMethod(client,
                 "sentra_core.builder.tools.workflow_tools.validate_blueprint_util",
                 {
                     blueprint_json: args.blueprint_json
@@ -297,37 +431,58 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !getSuccess(result)
             };
         }
 
         if (name === "get_available_events") {
-            const result = await callMethod(client, 
+            const result = await callMethod(client,
                 "sentra_core.builder.tools.workflow_tools.get_available_events_util",
                 {}
             );
 
+            // Helper tools return data directly - check for message.success or assume success if data exists
+            const hasSuccess = result?.message?.success ?? result?.success ?? (result?.events || result?.message?.events);
             return {
                 content: [{
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !hasSuccess
             };
         }
 
         if (name === "get_available_actions") {
-            const result = await callMethod(client, 
+            const result = await callMethod(client,
                 "sentra_core.builder.tools.workflow_tools.get_available_actions_util",
                 {}
             );
 
+            // Helper tools return data directly - check for message.success or assume success if data exists
+            const hasSuccess = result?.message?.success ?? result?.success ?? (result?.actions || result?.message?.actions);
             return {
                 content: [{
                     type: "text",
                     text: JSON.stringify(result, null, 2)
                 }],
-                isError: !result.success
+                isError: !hasSuccess
+            };
+        }
+
+        if (name === "get_available_ai_agents") {
+            const result = await callMethod(client,
+                "sentra_core.builder.tools.workflow_tools.get_available_ai_agents_util",
+                {}
+            );
+
+            // Helper tools return data directly - check for message.success or assume success if data exists
+            const hasSuccess = result?.message?.success ?? result?.success ?? (result?.agents || result?.message?.agents);
+            return {
+                content: [{
+                    type: "text",
+                    text: JSON.stringify(result, null, 2)
+                }],
+                isError: !hasSuccess
             };
         }
 

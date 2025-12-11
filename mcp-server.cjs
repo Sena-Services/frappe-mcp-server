@@ -2,17 +2,14 @@
 
 /**
  * Multi-Tenant MCP Server with Session Management
- * Version: 0.2.17
- *
- * Architecture (Server-Per-Session):
- * - ONE MCP Server instance PER SESSION (1:1 with transport)
- * - Each session has its own { server, transport, credentials }
+ * Architecture:
+ * - ONE MCP Server instance PER SESSION (fixes concurrency issue)
+ * - Each session has its own Server + Transport pair
  * - Per-site config from site_config.json (5-minute cache, no polling)
  *
- * This architecture follows the official MCP SDK pattern and fixes the
- * parallel tool call bug where mcpServer.connect(transport) would overwrite
- * the previous transport, orphaning other sessions.
- * See: docs/tech-debt/MCP_PARALLEL_TOOL_CALL_BUG.md
+ * FIX: The MCP SDK's Server class only stores ONE transport at a time.
+ * Previous architecture shared one Server across all sessions, causing
+ * only the last session to work. Now each session gets its own Server.
  */
 
 // Load environment variables from .env file
@@ -48,7 +45,6 @@ let ConfigManager, configManager;
 // SESSION MANAGEMENT
 // ============================================================================
 // Session map: { "siteName:sessionId" → { server, transport, tenant, created, credentials } }
-// Each session has its own Server instance (1:1 relationship with transport)
 const sessions = {};
 
 // Session cleanup interval (every 5 minutes)
@@ -56,24 +52,20 @@ const SESSION_TTL = 60 * 60 * 1000; // 1 hour
 const CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 // ============================================================================
-// MCP SERVER FACTORY (ONE INSTANCE PER SESSION)
+// PER-SESSION MCP SERVER FACTORY
 // ============================================================================
 
 /**
- * Create a new MCP Server instance with handlers.
- * Called ONCE per session initialization (following official MCP SDK pattern).
- *
- * This fixes the parallel session bug where mcpServer.connect(transport)
- * overwrites the previous transport, orphaning other sessions.
- * See: docs/tech-debt/MCP_PARALLEL_TOOL_CALL_BUG.md
+ * Create a new MCP Server instance for a session.
+ * Each session gets its own Server to avoid the single-transport limitation.
  */
-function createMCPServer() {
+function createSessionServer() {
   const server = new Server(
-    { name: 'frappe-mcp-server', version: '0.2.17' },
+    { name: 'frappe-mcp-server', version: '0.2.16' },
     { capabilities: { tools: {} } }
   );
 
-  // Register handlers on THIS server instance
+  // Register handlers for this server instance
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const tools = mcpLibrary.listTools();
     return { tools };
@@ -120,6 +112,7 @@ app.get('/health', async (req, res) => {
       sessions: Object.keys(sessions).length,
       cachedConfigs: cacheStats.cachedSites,
       availableSites: availableSites.length,
+      architecture: 'per-session-server',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -205,13 +198,11 @@ app.post(['/mcp', '/mcp/:siteName'], async (req, res) => {
       session.credentials = credentials;
     }
     else if (!sessionId && isInitializeRequest(req.body)) {
-      // CASE B: Create new session with dedicated Server instance
-      // This follows the official MCP SDK pattern (see simpleStreamableHttp.js example)
-      // Each session gets its own Server to avoid transport overwrite bug
+      // CASE B: Create new session with its own MCP Server
       console.log(`[MCP] Creating new session for site: ${siteName}`);
 
-      // Create NEW Server instance for this session (1:1 with transport)
-      const server = createMCPServer();
+      // Create a NEW MCP Server for this session (fixes concurrency!)
+      const sessionServer = createSessionServer();
 
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
@@ -221,7 +212,7 @@ app.post(['/mcp', '/mcp/:siteName'], async (req, res) => {
           console.log(`[MCP] Session initialized: ${key}`);
 
           sessions[key] = {
-            server,      // Store server per session
+            server: sessionServer,  // Store per-session server
             transport,
             tenant: siteName,
             created: Date.now(),
@@ -235,15 +226,24 @@ app.post(['/mcp', '/mcp/:siteName'], async (req, res) => {
         if (transport.sessionId) {
           const key = `${siteName}:${transport.sessionId}`;
           console.log(`[MCP] Transport closed, cleaning up session: ${key}`);
+
+          // Also close the session's server
+          const sess = sessions[key];
+          if (sess?.server) {
+            try {
+              sess.server.close();
+            } catch (e) { /* ignore */ }
+          }
+
           delete sessions[key];
         }
       };
 
-      // Connect THIS server to THIS transport (1:1 relationship)
-      await server.connect(transport);
+      // Connect transport to THIS SESSION'S server (not a shared global one)
+      await sessionServer.connect(transport);
 
       session = {
-        server,
+        server: sessionServer,
         transport,
         tenant: siteName,
         created: Date.now(),
@@ -334,6 +334,9 @@ app.delete(['/mcp', '/mcp/:siteName'], (req, res) => {
     try {
       session.transport.close();
     } catch (e) { /* ignore */ }
+    try {
+      session.server.close();
+    } catch (e) { /* ignore */ }
     delete sessions[foundKey];
   }
 
@@ -354,19 +357,16 @@ function cleanupExpiredSessions() {
     if (age > SESSION_TTL) {
       console.log(`[MCP] Cleaning up expired session: ${key} (age: ${Math.round(age / 1000)}s)`);
 
-      // Close server first, then transport
-      try {
-        if (session.server) {
-          session.server.close();
-        }
-      } catch (error) {
-        console.error(`[MCP] Error closing server for ${key}:`, error.message);
-      }
-
       try {
         session.transport.close();
       } catch (error) {
         console.error(`[MCP] Error closing transport for ${key}:`, error.message);
+      }
+
+      try {
+        session.server.close();
+      } catch (error) {
+        console.error(`[MCP] Error closing server for ${key}:`, error.message);
       }
 
       delete sessions[key];
@@ -426,44 +426,36 @@ async function startServer() {
 
     console.log('[MCP] Successfully loaded frappe-mcp-server library');
 
-    // No global MCP server initialization needed
-    // Each session creates its own Server instance (server-per-session pattern)
-
     // Start session cleanup job
     setInterval(cleanupExpiredSessions, CLEANUP_INTERVAL);
     console.log(`[MCP] Session cleanup job started (interval: ${CLEANUP_INTERVAL / 1000}s, TTL: ${SESSION_TTL / 1000}s)`);
 
     // Start HTTP server
-    const httpServer = app.listen(MCP_PORT, '127.0.0.1', () => {
+    const server = app.listen(MCP_PORT, '127.0.0.1', () => {
       console.log(`[MCP] Multi-Tenant MCP Server listening on http://127.0.0.1:${MCP_PORT}`);
       console.log(`[MCP] Config path: ${SITES_CONFIG_PATH}`);
-      console.log(`[MCP] Architecture: Server-per-session (fixes parallel tool call bug)`);
+      console.log(`[MCP] Architecture: Per-session Server (fixed concurrency)`);
     });
 
     // Graceful shutdown
     const shutdown = () => {
       console.log('[MCP] Shutting down Multi-Tenant MCP Server...');
 
-      // Close all sessions (each has its own server + transport)
+      // Close all sessions (each has its own server now)
       for (const [key, session] of Object.entries(sessions)) {
-        // Close server first
-        try {
-          if (session.server) {
-            session.server.close();
-          }
-        } catch (error) {
-          console.error(`[MCP] Error closing server for ${key}:`, error.message);
-        }
-
-        // Close transport
         try {
           session.transport.close();
         } catch (error) {
           console.error(`[MCP] Error closing transport for ${key}:`, error.message);
         }
+        try {
+          session.server.close();
+        } catch (error) {
+          console.error(`[MCP] Error closing server for ${key}:`, error.message);
+        }
       }
 
-      httpServer.close(() => {
+      server.close(() => {
         console.log('[MCP] Server closed');
         process.exit(0);
       });
