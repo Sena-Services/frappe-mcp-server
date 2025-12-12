@@ -7,3 +7,6 @@ dist/
 .DS_Store
 RECONCILIATION_STATUS.md
 test_tools_fix.py
+
+mcp-server.log
+test_web_search.py
