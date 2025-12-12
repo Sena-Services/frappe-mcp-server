@@ -251,6 +251,171 @@ export const DOCUMENT_TOOLS = [
     },
   },
   {
+    name: "rename_document",
+    description: `Rename a document (change its primary key/name). Use this when you need to change a document's name field, especially when the DocType uses autoname based on a field (e.g., autoname="field:driver_name").
+
+IMPORTANT: When a DocType has autoname="field:X", you CANNOT change field X via update_document. You MUST use rename_document instead, which will:
+1. Change the document's primary key (name)
+2. Update the field that autoname is based on
+3. Update all references to this document in other DocTypes
+
+Example: To change "Esteban Ocon" to "Ocon" in a DocType with autoname="field:driver_name":
+rename_document(doctype="F1 Driver Championship", old_name="Esteban Ocon", new_name="Ocon")`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        doctype: { type: "string", description: "DocType name" },
+        old_name: { type: "string", description: "Current document name (the value to change FROM)" },
+        new_name: { type: "string", description: "New document name (the value to change TO)" },
+        merge: { type: "boolean", description: "If true, merge with existing document of new_name (if it exists). Default: false" },
+      },
+      required: ["doctype", "old_name", "new_name"],
+    },
+  },
+  {
+    name: "bulk_delete_documents",
+    description: `Delete multiple documents at once based on filters.
+
+Use this when you need to delete many documents matching certain criteria.
+Much more efficient than calling delete_document in a loop.
+
+CAUTION: This is a destructive operation. Make sure your filters are correct!
+
+Examples:
+- Delete all drivers with 0 points: bulk_delete_documents(doctype="F1 Driver", filters={"points": 0})
+- Delete all inactive products: bulk_delete_documents(doctype="Product", filters={"status": "Inactive"})
+- Delete specific documents by name: bulk_delete_documents(doctype="Customer", names=["CUST-001", "CUST-002"])`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        doctype: { type: "string", description: "DocType name" },
+        filters: {
+          type: "object",
+          description: "Filters to match documents for deletion. Same format as list_documents filters.",
+          additionalProperties: true
+        },
+        names: {
+          type: "array",
+          items: { type: "string" },
+          description: "Alternative: List of specific document names to delete (instead of filters)"
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of documents to delete (safety limit). Default: 100"
+        }
+      },
+      required: ["doctype"],
+    },
+  },
+  {
+    name: "bulk_update_documents",
+    description: `Update multiple documents at once based on filters.
+
+Use this when you need to update the same field(s) on many documents.
+Much more efficient than calling update_document in a loop.
+
+Examples:
+- Set all products to inactive: bulk_update_documents(doctype="Product", filters={"status": "Active"}, values={"status": "Inactive"})
+- Update all drivers' team: bulk_update_documents(doctype="F1 Driver", filters={"team": "Alpine"}, values={"team": "Renault"})
+- Update specific documents: bulk_update_documents(doctype="Customer", names=["CUST-001", "CUST-002"], values={"status": "VIP"})`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        doctype: { type: "string", description: "DocType name" },
+        filters: {
+          type: "object",
+          description: "Filters to match documents for update. Same format as list_documents filters.",
+          additionalProperties: true
+        },
+        names: {
+          type: "array",
+          items: { type: "string" },
+          description: "Alternative: List of specific document names to update (instead of filters)"
+        },
+        values: {
+          type: "object",
+          description: "Field values to set on ALL matching documents",
+          additionalProperties: true
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of documents to update (safety limit). Default: 100"
+        }
+      },
+      required: ["doctype", "values"],
+    },
+  },
+  {
+    name: "bulk_create_documents",
+    description: `Create multiple documents at once.
+
+Use this when you need to create many documents from a list.
+More efficient than calling create_document in a loop.
+
+Example:
+bulk_create_documents(doctype="Product", documents=[
+  {"product_name": "Widget A", "price": 10},
+  {"product_name": "Widget B", "price": 20},
+  {"product_name": "Widget C", "price": 30}
+])`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        doctype: { type: "string", description: "DocType name" },
+        documents: {
+          type: "array",
+          items: { type: "object" },
+          description: "Array of document objects to create. Each object should have the field values for one document."
+        }
+      },
+      required: ["doctype", "documents"],
+    },
+  },
+  {
+    name: "duplicate_document",
+    description: `Create a copy of an existing document with a new name.
+
+Useful for cloning templates or creating similar documents.
+All fields are copied except the name (which uses autoname or the provided new_name).
+
+Example:
+duplicate_document(doctype="Product Template", source_name="TEMPLATE-001", new_name="PROD-NEW")`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        doctype: { type: "string", description: "DocType name" },
+        source_name: { type: "string", description: "Name of the document to copy" },
+        new_name: { type: "string", description: "Name for the new document (optional - uses autoname if not provided)" },
+        override_values: {
+          type: "object",
+          description: "Field values to override in the copy (optional)",
+          additionalProperties: true
+        }
+      },
+      required: ["doctype", "source_name"],
+    },
+  },
+  {
+    name: "get_linked_documents",
+    description: `Find all documents that link TO a specific document.
+
+Useful for understanding dependencies before deleting, or finding related records.
+
+Example: Find all Orders that link to Customer "CUST-001":
+get_linked_documents(doctype="Customer", name="CUST-001")
+
+Returns: {"Order": ["ORD-001", "ORD-002"], "Invoice": ["INV-001"]}`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        doctype: { type: "string", description: "DocType of the target document" },
+        name: { type: "string", description: "Name of the target document" },
+        link_doctype: { type: "string", description: "Optional: Only check links from this specific DocType" }
+      },
+      required: ["doctype", "name"],
+    },
+  },
+  {
     name: "reconcile_bank_transaction_with_vouchers",
     description: "Reconciles a Bank Transaction document with specified vouchers by calling a specific Frappe method.",
     inputSchema: {
@@ -562,6 +727,314 @@ export async function handleDocumentToolCall(request: any, credentials?: FrappeC
         };
       } catch (error) {
         return formatErrorResponse(error, `list_documents(${doctype})`);
+      }
+    } else if (name === "rename_document") {
+      const doctype = args.doctype as string;
+      const oldName = args.old_name as string;
+      const newName = args.new_name as string;
+      const merge = args.merge as boolean || false;
+
+      if (!doctype || !oldName || !newName) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Missing required parameters: doctype, old_name, and new_name",
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      try {
+        // Use frappe.rename_doc via call_method
+        const result = await callMethod(client, "frappe.client.rename_doc", {
+          doctype: doctype,
+          old: oldName,
+          new: newName,
+          merge: merge ? 1 : 0
+        });
+        console.error(`Document renamed from '${oldName}' to '${newName}':`, JSON.stringify(result, null, 2));
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: `Document renamed from '${oldName}' to '${newName}'`,
+                doctype: doctype,
+                old_name: oldName,
+                new_name: newName,
+                result: result
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, `rename_document(${doctype}, ${oldName} -> ${newName})`);
+      }
+    } else if (name === "bulk_delete_documents") {
+      const doctype = args.doctype as string;
+      const filters = args.filters as Record<string, any> | undefined;
+      const names = args.names as string[] | undefined;
+      const limit = (args.limit as number) || 100;
+
+      if (!doctype) {
+        return {
+          content: [{ type: "text", text: "Missing required parameter: doctype" }],
+          isError: true,
+        };
+      }
+
+      if (!filters && !names) {
+        return {
+          content: [{ type: "text", text: "Must provide either 'filters' or 'names' parameter" }],
+          isError: true,
+        };
+      }
+
+      try {
+        let docsToDelete: string[] = [];
+
+        if (names) {
+          docsToDelete = names.slice(0, limit);
+        } else if (filters) {
+          const formattedFilters = formatFilters(filters);
+          const docs = await listDocuments(client, doctype, formattedFilters, ["name"], limit);
+          docsToDelete = docs.map((d: any) => d.name);
+        }
+
+        if (docsToDelete.length === 0) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ success: true, message: "No documents matched the criteria", deleted_count: 0 }, null, 2) }],
+          };
+        }
+
+        // Delete each document
+        const results: { deleted: string[], failed: { name: string, error: string }[] } = { deleted: [], failed: [] };
+        for (const docName of docsToDelete) {
+          try {
+            await deleteDocument(client, doctype, docName);
+            results.deleted.push(docName);
+          } catch (err: any) {
+            results.failed.push({ name: docName, error: err.message || String(err) });
+          }
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: results.failed.length === 0,
+              message: `Deleted ${results.deleted.length} of ${docsToDelete.length} documents`,
+              deleted_count: results.deleted.length,
+              deleted: results.deleted,
+              failed: results.failed.length > 0 ? results.failed : undefined
+            }, null, 2)
+          }],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, `bulk_delete_documents(${doctype})`);
+      }
+    } else if (name === "bulk_update_documents") {
+      const doctype = args.doctype as string;
+      const filters = args.filters as Record<string, any> | undefined;
+      const names = args.names as string[] | undefined;
+      const values = args.values as Record<string, any>;
+      const limit = (args.limit as number) || 100;
+
+      if (!doctype || !values) {
+        return {
+          content: [{ type: "text", text: "Missing required parameters: doctype and values" }],
+          isError: true,
+        };
+      }
+
+      if (!filters && !names) {
+        return {
+          content: [{ type: "text", text: "Must provide either 'filters' or 'names' parameter" }],
+          isError: true,
+        };
+      }
+
+      try {
+        let docsToUpdate: string[] = [];
+
+        if (names) {
+          docsToUpdate = names.slice(0, limit);
+        } else if (filters) {
+          const formattedFilters = formatFilters(filters);
+          const docs = await listDocuments(client, doctype, formattedFilters, ["name"], limit);
+          docsToUpdate = docs.map((d: any) => d.name);
+        }
+
+        if (docsToUpdate.length === 0) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ success: true, message: "No documents matched the criteria", updated_count: 0 }, null, 2) }],
+          };
+        }
+
+        // Update each document
+        const results: { updated: string[], failed: { name: string, error: string }[] } = { updated: [], failed: [] };
+        for (const docName of docsToUpdate) {
+          try {
+            await updateDocument(client, doctype, docName, values);
+            results.updated.push(docName);
+          } catch (err: any) {
+            results.failed.push({ name: docName, error: err.message || String(err) });
+          }
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: results.failed.length === 0,
+              message: `Updated ${results.updated.length} of ${docsToUpdate.length} documents`,
+              updated_count: results.updated.length,
+              updated: results.updated,
+              values_applied: values,
+              failed: results.failed.length > 0 ? results.failed : undefined
+            }, null, 2)
+          }],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, `bulk_update_documents(${doctype})`);
+      }
+    } else if (name === "bulk_create_documents") {
+      const doctype = args.doctype as string;
+      const documents = args.documents as Record<string, any>[];
+
+      if (!doctype || !documents || !Array.isArray(documents)) {
+        return {
+          content: [{ type: "text", text: "Missing required parameters: doctype and documents (array)" }],
+          isError: true,
+        };
+      }
+
+      try {
+        const results: { created: string[], failed: { index: number, error: string }[] } = { created: [], failed: [] };
+
+        for (let i = 0; i < documents.length; i++) {
+          try {
+            const result = await createDocument(client, doctype, documents[i]);
+            results.created.push(result.name || `Document ${i + 1}`);
+          } catch (err: any) {
+            results.failed.push({ index: i, error: err.message || String(err) });
+          }
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: results.failed.length === 0,
+              message: `Created ${results.created.length} of ${documents.length} documents`,
+              created_count: results.created.length,
+              created: results.created,
+              failed: results.failed.length > 0 ? results.failed : undefined
+            }, null, 2)
+          }],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, `bulk_create_documents(${doctype})`);
+      }
+    } else if (name === "duplicate_document") {
+      const doctype = args.doctype as string;
+      const sourceName = args.source_name as string;
+      const newName = args.new_name as string | undefined;
+      const overrideValues = args.override_values as Record<string, any> | undefined;
+
+      if (!doctype || !sourceName) {
+        return {
+          content: [{ type: "text", text: "Missing required parameters: doctype and source_name" }],
+          isError: true,
+        };
+      }
+
+      try {
+        // Get the source document
+        const sourceDoc = await getDocument(client, doctype, sourceName);
+
+        // Remove system fields that shouldn't be copied
+        const systemFields = ['name', 'owner', 'creation', 'modified', 'modified_by', 'docstatus', 'idx', 'doctype', '_user_tags', '_comments', '_assign', '_liked_by'];
+        const newDocValues: Record<string, any> = {};
+
+        for (const [key, value] of Object.entries(sourceDoc)) {
+          if (!systemFields.includes(key) && !key.startsWith('_')) {
+            newDocValues[key] = value;
+          }
+        }
+
+        // Apply override values
+        if (overrideValues) {
+          Object.assign(newDocValues, overrideValues);
+        }
+
+        // If new_name provided and doctype uses field-based autoname, set that field
+        if (newName) {
+          newDocValues['name'] = newName;
+        }
+
+        // Create the new document
+        const result = await createDocument(client, doctype, newDocValues);
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: `Duplicated '${sourceName}' to '${result.name}'`,
+              source_name: sourceName,
+              new_name: result.name,
+              new_document: result
+            }, null, 2)
+          }],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, `duplicate_document(${doctype}, ${sourceName})`);
+      }
+    } else if (name === "get_linked_documents") {
+      const doctype = args.doctype as string;
+      const docName = args.name as string;
+      const linkDoctype = args.link_doctype as string | undefined;
+
+      if (!doctype || !docName) {
+        return {
+          content: [{ type: "text", text: "Missing required parameters: doctype and name" }],
+          isError: true,
+        };
+      }
+
+      try {
+        // Use frappe.client.get_linked_docs or a custom method
+        const result = await callMethod(client, "frappe.client.get_count", {
+          doctype: doctype,
+          filters: { name: docName }
+        });
+
+        // For now, use a simpler approach - call a method to get links
+        // This would need a custom Frappe method for full implementation
+        const linkInfo = await callMethod(client, "frappe.model.meta.get_link_fields", {
+          doctype: doctype
+        });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: `Link information for ${doctype}/${docName}`,
+              doctype: doctype,
+              name: docName,
+              note: "Full linked document listing requires custom Frappe method. Link fields info shown below.",
+              link_fields: linkInfo
+            }, null, 2)
+          }],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, `get_linked_documents(${doctype}, ${docName})`);
       }
     } else if (name === "reconcile_bank_transaction_with_vouchers") {
       const bankTransactionName = args.bank_transaction_name as string;

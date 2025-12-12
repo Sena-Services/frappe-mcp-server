@@ -16,6 +16,7 @@ import { BLUEPRINT_TOOLS } from './blueprint-operations.js';
 import { DOCTYPE_OPERATIONS_TOOLS } from './doctype-operations.js';
 import { WORKFLOW_TOOLS } from './workflow-operations.js';
 import { UI_TOOLS } from './ui-operations.js';
+import { WEB_TOOLS, executeWebSearch, executeWebExtract } from './web-operations.js';
 
 /**
  * Helper function to extract success from Frappe API response
@@ -108,6 +109,7 @@ export function listTools() {
     ...DOCTYPE_OPERATIONS_TOOLS,
     ...WORKFLOW_TOOLS,
     ...UI_TOOLS,
+    ...WEB_TOOLS,
     {
       name: "ping",
       description: "A simple tool to check if the server is responding.",
@@ -134,6 +136,82 @@ export async function executeTool(
   // Handle ping
   if (toolName === "ping") {
     return { content: [{ type: "text", text: "pong" }], isError: false };
+  }
+
+  // Handle web_search
+  if (toolName === "web_search") {
+    const tavilyApiKey = process.env.TAVILY_API_KEY;
+    if (!tavilyApiKey) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: false,
+            error: "TAVILY_API_KEY not configured in environment"
+          }, null, 2)
+        }],
+        isError: true
+      };
+    }
+    try {
+      const result = await executeWebSearch(args, tavilyApiKey);
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result, null, 2)
+        }],
+        isError: false
+      };
+    } catch (error: any) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: false,
+            error: error.message || "Web search failed"
+          }, null, 2)
+        }],
+        isError: true
+      };
+    }
+  }
+
+  // Handle web_extract
+  if (toolName === "web_extract") {
+    const tavilyApiKey = process.env.TAVILY_API_KEY;
+    if (!tavilyApiKey) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: false,
+            error: "TAVILY_API_KEY not configured in environment"
+          }, null, 2)
+        }],
+        isError: true
+      };
+    }
+    try {
+      const result = await executeWebExtract(args, tavilyApiKey);
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result, null, 2)
+        }],
+        isError: false
+      };
+    } catch (error: any) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: false,
+            error: error.message || "Web extract failed"
+          }, null, 2)
+        }],
+        isError: true
+      };
+    }
   }
 
   // Handle call_method
@@ -210,6 +288,255 @@ export async function executeTool(
       }],
       isError: false
     };
+  }
+
+  // rename_document - for renaming documents (especially with autoname fields)
+  if (toolName === "rename_document") {
+    const result = await docApi.callMethod(client, "frappe.client.rename_doc", {
+      doctype: args.doctype,
+      old_name: args.old_name,
+      new_name: args.new_name,
+      merge: args.merge ? 1 : 0
+    });
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          success: true,
+          message: `Document renamed from '${args.old_name}' to '${args.new_name}'`,
+          doctype: args.doctype,
+          old_name: args.old_name,
+          new_name: args.new_name,
+          result: result
+        }, null, 2)
+      }],
+      isError: false
+    };
+  }
+
+  // bulk_create_documents - create multiple documents at once
+  if (toolName === "bulk_create_documents") {
+    const documents = args.documents as Record<string, any>[];
+    const results: { created: string[], failed: { index: number, error: string }[] } = { created: [], failed: [] };
+
+    for (let i = 0; i < documents.length; i++) {
+      try {
+        const result = await docApi.createDocument(client, args.doctype, documents[i]);
+        results.created.push(result.name || `Document ${i + 1}`);
+      } catch (err: any) {
+        results.failed.push({ index: i, error: err.message || String(err) });
+      }
+    }
+
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          success: results.failed.length === 0,
+          message: `Created ${results.created.length} of ${documents.length} documents`,
+          created_count: results.created.length,
+          created: results.created,
+          failed: results.failed.length > 0 ? results.failed : undefined
+        }, null, 2)
+      }],
+      isError: false
+    };
+  }
+
+  // bulk_update_documents - update multiple documents at once
+  if (toolName === "bulk_update_documents") {
+    const values = args.values as Record<string, any>;
+    const limit = (args.limit as number) || 100;
+    let docsToUpdate: string[] = [];
+
+    if (args.names) {
+      docsToUpdate = (args.names as string[]).slice(0, limit);
+    } else if (args.filters) {
+      const docs = await docApi.listDocuments(client, args.doctype, args.filters, ["name"], limit);
+      docsToUpdate = docs.map((d: any) => d.name);
+    }
+
+    if (docsToUpdate.length === 0) {
+      return {
+        content: [{ type: "text", text: JSON.stringify({ success: true, message: "No documents matched the criteria", updated_count: 0 }, null, 2) }],
+        isError: false
+      };
+    }
+
+    const results: { updated: string[], failed: { name: string, error: string }[] } = { updated: [], failed: [] };
+    for (const docName of docsToUpdate) {
+      try {
+        await docApi.updateDocument(client, args.doctype, docName, values);
+        results.updated.push(docName);
+      } catch (err: any) {
+        results.failed.push({ name: docName, error: err.message || String(err) });
+      }
+    }
+
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          success: results.failed.length === 0,
+          message: `Updated ${results.updated.length} of ${docsToUpdate.length} documents`,
+          updated_count: results.updated.length,
+          updated: results.updated,
+          values_applied: values,
+          failed: results.failed.length > 0 ? results.failed : undefined
+        }, null, 2)
+      }],
+      isError: false
+    };
+  }
+
+  // bulk_delete_documents - delete multiple documents at once
+  if (toolName === "bulk_delete_documents") {
+    const limit = (args.limit as number) || 100;
+    let docsToDelete: string[] = [];
+
+    if (args.names) {
+      docsToDelete = (args.names as string[]).slice(0, limit);
+    } else if (args.filters) {
+      const docs = await docApi.listDocuments(client, args.doctype, args.filters, ["name"], limit);
+      docsToDelete = docs.map((d: any) => d.name);
+    }
+
+    if (docsToDelete.length === 0) {
+      return {
+        content: [{ type: "text", text: JSON.stringify({ success: true, message: "No documents matched the criteria", deleted_count: 0 }, null, 2) }],
+        isError: false
+      };
+    }
+
+    const results: { deleted: string[], failed: { name: string, error: string }[] } = { deleted: [], failed: [] };
+    for (const docName of docsToDelete) {
+      try {
+        await docApi.deleteDocument(client, args.doctype, docName);
+        results.deleted.push(docName);
+      } catch (err: any) {
+        results.failed.push({ name: docName, error: err.message || String(err) });
+      }
+    }
+
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          success: results.failed.length === 0,
+          message: `Deleted ${results.deleted.length} of ${docsToDelete.length} documents`,
+          deleted_count: results.deleted.length,
+          deleted: results.deleted,
+          failed: results.failed.length > 0 ? results.failed : undefined
+        }, null, 2)
+      }],
+      isError: false
+    };
+  }
+
+  // duplicate_document - copy a document with optional overrides
+  if (toolName === "duplicate_document") {
+    // Get the source document
+    const sourceDoc = await docApi.getDocument(client, args.doctype, args.source_name);
+
+    // Remove system fields that shouldn't be copied
+    const systemFields = ['name', 'owner', 'creation', 'modified', 'modified_by', 'docstatus', 'idx', 'doctype', '_user_tags', '_comments', '_assign', '_liked_by'];
+    const newDocValues: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(sourceDoc)) {
+      if (!systemFields.includes(key) && !key.startsWith('_')) {
+        newDocValues[key] = value;
+      }
+    }
+
+    // Apply override values
+    if (args.override_values) {
+      Object.assign(newDocValues, args.override_values);
+    }
+
+    // Create the new document
+    const result = await docApi.createDocument(client, args.doctype, newDocValues);
+
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          success: true,
+          message: `Duplicated '${args.source_name}' to '${result.name}'`,
+          source_name: args.source_name,
+          new_name: result.name,
+          new_document: result
+        }, null, 2)
+      }],
+      isError: false
+    };
+  }
+
+  // get_linked_documents - find documents that link to a specific document
+  if (toolName === "get_linked_documents") {
+    try {
+      // Get link fields info for this DocType
+      const linkInfo = await docApi.callMethod(client, "frappe.client.get_list", {
+        doctype: "DocField",
+        filters: {
+          options: args.doctype,
+          fieldtype: "Link"
+        },
+        fields: ["parent", "fieldname", "label"],
+        limit_page_length: 100
+      });
+
+      // For each linking DocType, count how many docs link to our target
+      const linkedDocs: Record<string, { count: number, field: string }> = {};
+
+      for (const linkField of linkInfo) {
+        if (linkField.parent && linkField.parent !== args.doctype) {
+          try {
+            const count = await docApi.callMethod(client, "frappe.client.get_count", {
+              doctype: linkField.parent,
+              filters: { [linkField.fieldname]: args.name }
+            });
+            if (count > 0) {
+              linkedDocs[linkField.parent] = {
+                count: count,
+                field: linkField.fieldname
+              };
+            }
+          } catch (e) {
+            // Skip if we can't check this DocType
+          }
+        }
+      }
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            doctype: args.doctype,
+            name: args.name,
+            linked_from: linkedDocs,
+            total_linking_doctypes: Object.keys(linkedDocs).length,
+            message: Object.keys(linkedDocs).length > 0
+              ? `Found ${Object.keys(linkedDocs).length} DocTypes linking to this document`
+              : "No documents link to this document"
+          }, null, 2)
+        }],
+        isError: false
+      };
+    } catch (error: any) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: false,
+            error: error.message || String(error),
+            doctype: args.doctype,
+            name: args.name
+          }, null, 2)
+        }],
+        isError: true
+      };
+    }
   }
 
   // Handle schema operations
@@ -2048,6 +2375,44 @@ export async function executeTool(
     };
   }
 
+  if (toolName === "remove_fields_from_doctype") {
+    const result = await docApi.callMethod(
+      client,
+      "sentra_core.builder.tools.data_tools.remove_fields_from_doctype_util",
+      {
+        doctype_name: args.doctype_name,
+        fieldnames: args.fieldnames
+      }
+    );
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result, null, 2)
+      }],
+      isError: false
+    };
+  }
+
+  if (toolName === "rename_field") {
+    const result = await docApi.callMethod(
+      client,
+      "sentra_core.builder.tools.data_tools.rename_field_util",
+      {
+        doctype_name: args.doctype_name,
+        old_fieldname: args.old_fieldname,
+        new_fieldname: args.new_fieldname,
+        new_label: args.new_label || null
+      }
+    );
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result, null, 2)
+      }],
+      isError: !getSuccess(result)
+    };
+  }
+
   if (toolName === "rename_doctype") {
     // Use the existing rename_doctype API from sentra_core
     const result = await docApi.callMethod(
@@ -2122,6 +2487,49 @@ export async function executeTool(
               }],
               isError: true
             };
+          }
+
+          // Validate action_groups structure - each group must be an array of objects
+          const actionGroups = parsedActions.action_groups;
+          if (typeof actionGroups === 'object' && actionGroups !== null) {
+            for (const [groupName, groupValue] of Object.entries(actionGroups)) {
+              // Each group value must be an array
+              if (!Array.isArray(groupValue)) {
+                return {
+                  content: [{
+                    type: "text",
+                    text: JSON.stringify({
+                      success: false,
+                      error: `action_groups["${groupName}"] must be an array, got ${typeof groupValue}`,
+                      suggestion: `Each action group must be an array of actions: "action_groups": {"${groupName}": [{...}, {...}]}`,
+                      fix_hint: "COMMON MISTAKE: You might be putting group definitions INSIDE another group's array. All groups must be SIBLING KEYS at the action_groups level, not nested inside each other."
+                    }, null, 2)
+                  }],
+                  isError: true
+                };
+              }
+
+              // Each item in the array must be an object (action), not a string
+              for (let i = 0; i < (groupValue as any[]).length; i++) {
+                const item = (groupValue as any[])[i];
+                if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+                  return {
+                    content: [{
+                      type: "text",
+                      text: JSON.stringify({
+                        success: false,
+                        error: `action_groups["${groupName}"][${i}] must be an action object, got ${Array.isArray(item) ? 'array' : typeof item}`,
+                        suggestion: "Each item in an action group array must be an action object like {\"create_document\": {...}} or {\"send_whatsapp_message\": {...}}",
+                        fix_hint: "COMMON MISTAKE: After '[' you can ONLY have objects {...}, NOT 'key': value pairs. If you're trying to define another group, move it to be a sibling key in action_groups, not inside this array.",
+                        example_wrong: '{"action_groups": {"group_a": [{"switch": {...}}, "group_b": [...]]}}',
+                        example_correct: '{"action_groups": {"group_a": [{"switch": {...}}], "group_b": [...]}}'
+                      }, null, 2)
+                    }],
+                    isError: true
+                  };
+                }
+              }
+            }
           }
         }
       }

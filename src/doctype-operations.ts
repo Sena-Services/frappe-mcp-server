@@ -172,6 +172,53 @@ export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
             },
             required: ["old_name", "new_name"]
         }
+    },
+    {
+        name: "remove_fields_from_doctype",
+        description: "Remove fields from an existing DocType. Use this to delete unwanted or temporary fields from a DocType schema. IMPORTANT: This permanently deletes the fields and all data in those fields. The inverse of add_fields_to_doctype.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                doctype_name: {
+                    type: "string",
+                    description: "Name of the DocType to modify"
+                },
+                fieldnames: {
+                    type: "array",
+                    description: "Array of fieldnames to remove (e.g., ['temp_field1', 'old_status', 'za_bills']). These must be exact fieldnames (snake_case) as they exist in the DocType.",
+                    items: {
+                        type: "string"
+                    }
+                }
+            },
+            required: ["doctype_name", "fieldnames"]
+        }
+    },
+    {
+        name: "rename_field",
+        description: "Rename a field (column) in a DocType. This properly renames the database column, updates the DocField record, and migrates all existing data. Use this instead of add+delete which loses data. IMPORTANT: This is a data-preserving operation.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                doctype_name: {
+                    type: "string",
+                    description: "Name of the DocType containing the field"
+                },
+                old_fieldname: {
+                    type: "string",
+                    description: "Current fieldname to rename (snake_case, e.g., 'discharge_status')"
+                },
+                new_fieldname: {
+                    type: "string",
+                    description: "New fieldname (snake_case, e.g., 'discharge')"
+                },
+                new_label: {
+                    type: "string",
+                    description: "Optional new label for the field. If not provided, generates from new_fieldname."
+                }
+            },
+            required: ["doctype_name", "old_fieldname", "new_fieldname"]
+        }
     }
 ];
 
@@ -291,6 +338,29 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
                 "sentra_core.builder.tools.data_tools.delete_doctype",
                 {
                     doctype_name: args.doctype_name
+                }
+            );
+
+            return {
+                content: [{
+                    type: "text",
+                    text: JSON.stringify(result, null, 2)
+                }],
+                isError: !getSuccess(result)
+            };
+        }
+
+        if (name === "remove_fields_from_doctype") {
+            if (!args || !args.doctype_name || !args.fieldnames) {
+                throw new Error("Missing required arguments: doctype_name and fieldnames are required");
+            }
+
+            const result = await callMethod(
+                client,
+                "sentra_core.builder.tools.data_tools.remove_fields_from_doctype_util",
+                {
+                    doctype_name: args.doctype_name,
+                    fieldnames: args.fieldnames
                 }
             );
 
