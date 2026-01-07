@@ -1179,7 +1179,7 @@ export async function handleDocumentToolCall(request: any, credentials?: FrappeC
       }
 
       try {
-        const result = await callMethod(client, "sentra_core.builder.tools.data_tools.add_child_table_row", {
+        const result = await callMethod(client, "sena_backend.builder.tools.data_tools.add_child_table_row", {
           child_doctype: childDoctype,
           parent_doctype: parentDoctype,
           parent_name: parentName,
@@ -1224,7 +1224,7 @@ export async function handleDocumentToolCall(request: any, credentials?: FrappeC
       }
 
       try {
-        const result = await callMethod(client, "sentra_core.builder.tools.data_tools.update_child_table_row", {
+        const result = await callMethod(client, "sena_backend.builder.tools.data_tools.update_child_table_row", {
           child_doctype: childDoctype,
           row_name: rowName,
           values: JSON.stringify(values)
