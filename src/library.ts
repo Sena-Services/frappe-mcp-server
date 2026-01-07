@@ -539,6 +539,71 @@ export async function executeTool(
     }
   }
 
+  // Handle child table row operations
+  if (toolName === "add_child_table_row") {
+    try {
+      const result = await docApi.callMethod(client, "sentra_core.builder.tools.data_tools.add_child_table_row", {
+        child_doctype: args.child_doctype,
+        parent_doctype: args.parent_doctype,
+        parent_name: args.parent_name,
+        parentfield: args.parentfield,
+        values: args.values  // Pass as object, frappe-js-sdk handles serialization
+      });
+      // Result is wrapped in { message: { success, ... } }
+      const data = result?.message || result;
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(data, null, 2)
+        }],
+        isError: !data?.success
+      };
+    } catch (error: any) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: false,
+            error: error.message || String(error),
+            operation: "add_child_table_row"
+          }, null, 2)
+        }],
+        isError: true
+      };
+    }
+  }
+
+  if (toolName === "update_child_table_row") {
+    try {
+      const result = await docApi.callMethod(client, "sentra_core.builder.tools.data_tools.update_child_table_row", {
+        child_doctype: args.child_doctype,
+        row_name: args.row_name,
+        values: args.values  // Pass as object, frappe-js-sdk handles serialization
+      });
+      // Result is wrapped in { message: { success, ... } }
+      const data = result?.message || result;
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(data, null, 2)
+        }],
+        isError: !data?.success
+      };
+    } catch (error: any) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: false,
+            error: error.message || String(error),
+            operation: "update_child_table_row"
+          }, null, 2)
+        }],
+        isError: true
+      };
+    }
+  }
+
   // Handle schema operations
   if (toolName === "get_doctype_schema") {
     try {

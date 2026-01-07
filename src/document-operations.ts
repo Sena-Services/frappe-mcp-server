@@ -451,6 +451,81 @@ Returns: {"Order": ["ORD-001", "ORD-002"], "Invoice": ["INV-001"]}`,
       required: ["bank_transaction_name", "vouchers"],
     },
   },
+  {
+    name: "add_child_table_row",
+    description: `Add a row to a child table of an existing document.
+
+Use this to add records to child tables (one-to-many relationships) without updating the entire parent.
+This is more efficient than get_document + update_document for appending rows.
+
+Example - Add a task to an AI Agent:
+add_child_table_row(
+  child_doctype="AI Agent Task",
+  parent_doctype="AI Agent",
+  parent_name="data_agent",
+  parentfield="tasks",
+  values={"task_id": "task_001", "frontend_text": "Creating Customer", "status": "running"}
+)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        child_doctype: {
+          type: "string",
+          description: "The child table DocType name (e.g., 'AI Agent Task', 'Sales Order Item')"
+        },
+        parent_doctype: {
+          type: "string",
+          description: "The parent DocType name (e.g., 'AI Agent', 'Sales Order')"
+        },
+        parent_name: {
+          type: "string",
+          description: "The name of the parent document to add the row to"
+        },
+        parentfield: {
+          type: "string",
+          description: "The field name on the parent that holds this child table (e.g., 'tasks', 'items')"
+        },
+        values: {
+          type: "object",
+          description: "Field values for the new child row",
+          additionalProperties: true
+        }
+      },
+      required: ["child_doctype", "parent_doctype", "parent_name", "parentfield", "values"],
+    },
+  },
+  {
+    name: "update_child_table_row",
+    description: `Update an existing child table row by its row name (primary key).
+
+Use this to update specific fields on a child table row without touching the parent.
+
+Example - Update a task status:
+update_child_table_row(
+  child_doctype="AI Agent Task",
+  row_name="abc123xyz",
+  values={"status": "completed", "result": "Task completed successfully"}
+)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        child_doctype: {
+          type: "string",
+          description: "The child table DocType name (e.g., 'AI Agent Task')"
+        },
+        row_name: {
+          type: "string",
+          description: "The name (primary key) of the child row to update"
+        },
+        values: {
+          type: "object",
+          description: "Field values to update on the child row",
+          additionalProperties: true
+        }
+      },
+      required: ["child_doctype", "row_name", "values"],
+    },
+  },
 ];
 
 /**
@@ -1085,6 +1160,96 @@ export async function handleDocumentToolCall(request: any, credentials?: FrappeC
       } catch (error) {
         console.error(`Error in reconcile_bank_transaction_with_vouchers handler:`, error);
         return formatErrorResponse(error, `reconcile_bank_transaction_with_vouchers(${bankTransactionName})`);
+      }
+    } else if (name === "add_child_table_row") {
+      const childDoctype = args.child_doctype as string;
+      const parentDoctype = args.parent_doctype as string;
+      const parentName = args.parent_name as string;
+      const parentfield = args.parentfield as string;
+      const values = args.values as Record<string, any>;
+
+      if (!childDoctype || !parentDoctype || !parentName || !parentfield || !values) {
+        return {
+          content: [{
+            type: "text",
+            text: "Missing required parameters: child_doctype, parent_doctype, parent_name, parentfield, and values"
+          }],
+          isError: true,
+        };
+      }
+
+      try {
+        const result = await callMethod(client, "sentra_core.builder.tools.data_tools.add_child_table_row", {
+          child_doctype: childDoctype,
+          parent_doctype: parentDoctype,
+          parent_name: parentName,
+          parentfield: parentfield,
+          values: JSON.stringify(values)
+        });
+        console.error(`Result from add_child_table_row:`, JSON.stringify(result, null, 2));
+
+        if (result.success === false) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error adding child table row: ${result.error || result.message}`
+            }],
+            isError: true,
+          };
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(result, null, 2)
+          }],
+        };
+      } catch (error) {
+        console.error(`Error in add_child_table_row handler:`, error);
+        return formatErrorResponse(error, `add_child_table_row(${childDoctype})`);
+      }
+    } else if (name === "update_child_table_row") {
+      const childDoctype = args.child_doctype as string;
+      const rowName = args.row_name as string;
+      const values = args.values as Record<string, any>;
+
+      if (!childDoctype || !rowName || !values) {
+        return {
+          content: [{
+            type: "text",
+            text: "Missing required parameters: child_doctype, row_name, and values"
+          }],
+          isError: true,
+        };
+      }
+
+      try {
+        const result = await callMethod(client, "sentra_core.builder.tools.data_tools.update_child_table_row", {
+          child_doctype: childDoctype,
+          row_name: rowName,
+          values: JSON.stringify(values)
+        });
+        console.error(`Result from update_child_table_row:`, JSON.stringify(result, null, 2));
+
+        if (result.success === false) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error updating child table row: ${result.error || result.message}`
+            }],
+            isError: true,
+          };
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(result, null, 2)
+          }],
+        };
+      } catch (error) {
+        console.error(`Error in update_child_table_row handler:`, error);
+        return formatErrorResponse(error, `update_child_table_row(${childDoctype}, ${rowName})`);
       }
     }
 
