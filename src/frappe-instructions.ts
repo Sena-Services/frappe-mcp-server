@@ -645,12 +645,12 @@ export const HELPER_TOOLS = [
             type: "object",
             properties: {
               search_term: { type: "string", description: "Search term for DocType name (uses LIKE %term%)" },
-              module: { type: "string", description: "Filter by module name (e.g., 'Sentra Core')" },
+              module: { type: "string", description: "Filter by module name (e.g., 'Sena Backend')" },
               is_custom: { type: "boolean", description: "Filter by custom DocTypes only" },
               limit: { type: "number", description: "Max results (default 50)" }
             }
           },
-          description: "Search for DocTypes by name pattern and/or module. Use {module: 'Sentra Core'} to get all custom DocTypes, or {search_term: 'test'} for fuzzy search, or combine both."
+          description: "Search for DocTypes by name pattern and/or module. Use {module: 'Sena Backend'} to get all custom DocTypes, or {search_term: 'test'} for fuzzy search, or combine both."
         },
         fields: {
           type: "array",

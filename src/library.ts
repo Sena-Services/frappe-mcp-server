@@ -586,7 +586,7 @@ export async function executeTool(
   if (toolName === "execute_blueprint") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.bl_engine.core.blueprint_executor.execute_blueprint_manually",
+      "sena_backend.bl_engine.core.blueprint_executor.execute_blueprint_manually",
       {
         blueprint_name: args.blueprint_name,
         doc: args.doc_data
@@ -1469,7 +1469,7 @@ export async function executeTool(
         try {
           const response = await docApi.callMethod(
             client,
-            'sentra_core.builder.tools.workflow_tools.get_available_events_util',
+            'sena_backend.builder.tools.workflow_tools.get_available_events_util',
             {}
           );
           if (response?.success) {
@@ -1490,7 +1490,7 @@ export async function executeTool(
         try {
           const response = await docApi.callMethod(
             client,
-            'sentra_core.builder.tools.workflow_tools.get_available_actions_util',
+            'sena_backend.builder.tools.workflow_tools.get_available_actions_util',
             {}
           );
           if (response?.success) {
@@ -2298,11 +2298,11 @@ export async function executeTool(
   if (toolName === "create_doctype") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.tools.data_tools.create_doctype_util",
+      "sena_backend.builder.tools.data_tools.create_doctype_util",
       {
         name: args.name,
         fields: args.fields || [],  // Allow empty fields
-        module: args.module || "Sentra Core",
+        module: args.module || "Sena Backend",
         naming_rule: args.naming_rule || "By fieldname",
         autoname: args.autoname
       }
@@ -2319,7 +2319,7 @@ export async function executeTool(
   if (toolName === "create_child_table") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.tools.data_tools.create_child_table_util",
+      "sena_backend.builder.tools.data_tools.create_child_table_util",
       {
         parent_doctype: args.parent_doctype,
         child_doctype_name: args.child_doctype_name,
@@ -2342,7 +2342,7 @@ export async function executeTool(
   if (toolName === "add_fields_to_doctype") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.tools.data_tools.add_fields_to_doctype_util",
+      "sena_backend.builder.tools.data_tools.add_fields_to_doctype_util",
       {
         doctype_name: args.doctype_name,
         fields: args.fields
@@ -2360,7 +2360,7 @@ export async function executeTool(
   if (toolName === "delete_doctype") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.tools.data_tools.delete_doctype",
+      "sena_backend.builder.tools.data_tools.delete_doctype",
       {
         doctype_name: args.doctype_name,
         force: args.force || false
@@ -2378,7 +2378,7 @@ export async function executeTool(
   if (toolName === "remove_fields_from_doctype") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.tools.data_tools.remove_fields_from_doctype_util",
+      "sena_backend.builder.tools.data_tools.remove_fields_from_doctype_util",
       {
         doctype_name: args.doctype_name,
         fieldnames: args.fieldnames
@@ -2396,7 +2396,7 @@ export async function executeTool(
   if (toolName === "rename_field") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.tools.data_tools.rename_field_util",
+      "sena_backend.builder.tools.data_tools.rename_field_util",
       {
         doctype_name: args.doctype_name,
         old_fieldname: args.old_fieldname,
@@ -2414,10 +2414,10 @@ export async function executeTool(
   }
 
   if (toolName === "rename_doctype") {
-    // Use the existing rename_doctype API from sentra_core
+    // Use the existing rename_doctype API from sena_backend
     const result = await docApi.callMethod(
       client,
-      "sentra_core.api.builder.get_doctypes.rename_doctype",
+      "sena_backend.api.builder.get_doctypes.rename_doctype",
       {
         old_name: args.old_name,
         new_name: args.new_name
@@ -2583,7 +2583,7 @@ export async function executeTool(
 
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.tools.workflow_tools.create_blueprint_util",
+      "sena_backend.builder.tools.workflow_tools.create_blueprint_util",
       {
         name: args.name,
         triggers: args.triggers,
@@ -2604,7 +2604,7 @@ export async function executeTool(
   if (toolName === "read_blueprint") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.tools.workflow_tools.read_blueprint_util",
+      "sena_backend.builder.tools.workflow_tools.read_blueprint_util",
       {
         blueprint_id: args.blueprint_id
       }
@@ -2657,7 +2657,7 @@ export async function executeTool(
 
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.tools.workflow_tools.update_blueprint_util",
+      "sena_backend.builder.tools.workflow_tools.update_blueprint_util",
       {
         blueprint_id: args.blueprint_id,
         triggers: args.triggers || null,
@@ -2678,7 +2678,7 @@ export async function executeTool(
   if (toolName === "delete_blueprint") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.tools.workflow_tools.delete_blueprint_util",
+      "sena_backend.builder.tools.workflow_tools.delete_blueprint_util",
       {
         blueprint_id: args.blueprint_id
       }
@@ -2695,7 +2695,7 @@ export async function executeTool(
   if (toolName === "validate_blueprint") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.tools.workflow_tools.validate_blueprint_util",
+      "sena_backend.builder.tools.workflow_tools.validate_blueprint_util",
       {
         blueprint_json: args.blueprint_json
       }
@@ -2712,7 +2712,7 @@ export async function executeTool(
   if (toolName === "get_available_events") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.tools.workflow_tools.get_available_events_util",
+      "sena_backend.builder.tools.workflow_tools.get_available_events_util",
       {}
     );
     return {
@@ -2727,7 +2727,7 @@ export async function executeTool(
   if (toolName === "get_available_actions") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.tools.workflow_tools.get_available_actions_util",
+      "sena_backend.builder.tools.workflow_tools.get_available_actions_util",
       {}
     );
     return {
@@ -2742,7 +2742,7 @@ export async function executeTool(
   if (toolName === "get_available_ai_agents") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.tools.workflow_tools.get_available_ai_agents_util",
+      "sena_backend.builder.tools.workflow_tools.get_available_ai_agents_util",
       {}
     );
     return {
@@ -2758,7 +2758,7 @@ export async function executeTool(
   if (toolName === "get_preview_config") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.ui_agent.get_preview_config",
+      "sena_backend.builder.ui_agent.get_preview_config",
       {
         page_id: args.page_id
       }
@@ -2776,7 +2776,7 @@ export async function executeTool(
   if (toolName === "update_preview_config") {
     const result = await docApi.callMethod(
       client,
-      "sentra_core.builder.ui_agent.update_preview_config_util",
+      "sena_backend.builder.ui_agent.update_preview_config_util",
       {
         page_id: args.page_id,
         config_json: args.config_json

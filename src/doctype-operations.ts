@@ -54,8 +54,8 @@ export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
                 },
                 module: {
                     type: "string",
-                    description: "Frappe module name (default: 'Sentra Core')",
-                    default: "Sentra Core"
+                    description: "Frappe module name (default: 'Sena Backend')",
+                    default: "Sena Backend"
                 },
                 naming_rule: {
                     type: "string",
@@ -261,11 +261,11 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
             // Call the Frappe backend method
             const result = await callMethod(
                 client,
-                "sentra_core.builder.tools.data_tools.create_doctype_util",
+                "sena_backend.builder.tools.data_tools.create_doctype_util",
                 {
                     name: args.name,
                     fields: args.fields || [],  // Allow empty fields
-                    module: args.module || "Sentra Core",
+                    module: args.module || "Sena Backend",
                     naming_rule: args.naming_rule || "By fieldname",
                     autoname: args.autoname || null
                 }
@@ -287,7 +287,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
 
             const result = await callMethod(
                 client,
-                "sentra_core.builder.tools.data_tools.create_child_table_util",
+                "sena_backend.builder.tools.data_tools.create_child_table_util",
                 {
                     parent_doctype: args.parent_doctype,
                     child_doctype_name: args.child_doctype_name,
@@ -312,7 +312,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
 
             const result = await callMethod(
                 client,
-                "sentra_core.builder.tools.data_tools.add_fields_to_doctype_util",
+                "sena_backend.builder.tools.data_tools.add_fields_to_doctype_util",
                 {
                     doctype_name: args.doctype_name,
                     fields: args.fields
@@ -335,7 +335,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
 
             const result = await callMethod(
                 client,
-                "sentra_core.builder.tools.data_tools.delete_doctype",
+                "sena_backend.builder.tools.data_tools.delete_doctype",
                 {
                     doctype_name: args.doctype_name
                 }
@@ -357,7 +357,7 @@ export async function handleDoctypeOperationsToolCall(request: CallToolRequest, 
 
             const result = await callMethod(
                 client,
-                "sentra_core.builder.tools.data_tools.remove_fields_from_doctype_util",
+                "sena_backend.builder.tools.data_tools.remove_fields_from_doctype_util",
                 {
                     doctype_name: args.doctype_name,
                     fieldnames: args.fieldnames

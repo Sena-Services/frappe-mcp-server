@@ -6,8 +6,8 @@
  * UI preview configurations programmatically via AI agents.
  *
  * MCP calls these methods:
- * - sentra_core.builder.ui_agent.get_preview_config
- * - sentra_core.builder.ui_agent.update_preview_config_util
+ * - sena_backend.builder.ui_agent.get_preview_config
+ * - sena_backend.builder.ui_agent.update_preview_config_util
  */
 
 import { CallToolRequest, Tool } from "@modelcontextprotocol/sdk/types.js";
@@ -83,7 +83,7 @@ export async function handleUIToolCall(request: CallToolRequest, credentials?: F
 
             const result = await callMethod(
                 client,
-                "sentra_core.builder.ui_agent.get_preview_config",
+                "sena_backend.builder.ui_agent.get_preview_config",
                 {
                     page_id: args.page_id
                 }
@@ -106,7 +106,7 @@ export async function handleUIToolCall(request: CallToolRequest, credentials?: F
 
             const result = await callMethod(
                 client,
-                "sentra_core.builder.ui_agent.update_preview_config_util",
+                "sena_backend.builder.ui_agent.update_preview_config_util",
                 {
                     page_id: args.page_id,
                     config_json: args.config_json

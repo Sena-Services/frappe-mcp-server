@@ -158,7 +158,7 @@ export const WORKFLOW_TOOLS: Tool[] = [
 
 /**
  * Handle workflow tool calls
- * All implementation delegated to sentra_core.builder.tools.workflow_tools
+ * All implementation delegated to sena_backend.builder.tools.workflow_tools
  * @param request - MCP request object
  * @param credentials - Site-specific credentials (url, api_key, api_secret)
  */
@@ -276,7 +276,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
             }
 
             const result = await callMethod(client,
-                "sentra_core.builder.tools.workflow_tools.create_blueprint_util",
+                "sena_backend.builder.tools.workflow_tools.create_blueprint_util",
                 {
                     name: args.name,
                     triggers: args.triggers,
@@ -301,7 +301,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
             }
 
             const result = await callMethod(client,
-                "sentra_core.builder.tools.workflow_tools.read_blueprint_util",
+                "sena_backend.builder.tools.workflow_tools.read_blueprint_util",
                 {
                     blueprint_id: args.blueprint_id
                 }
@@ -357,7 +357,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
             }
 
             const result = await callMethod(client,
-                "sentra_core.builder.tools.workflow_tools.update_blueprint_util",
+                "sena_backend.builder.tools.workflow_tools.update_blueprint_util",
                 {
                     blueprint_id: args.blueprint_id,
                     triggers: args.triggers || null,
@@ -382,7 +382,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
             }
 
             const result = await callMethod(client,
-                "sentra_core.builder.tools.workflow_tools.delete_blueprint_util",
+                "sena_backend.builder.tools.workflow_tools.delete_blueprint_util",
                 {
                     blueprint_id: args.blueprint_id
                 }
@@ -399,7 +399,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
 
         if (name === "list_blueprints") {
             const result = await callMethod(client,
-                "sentra_core.builder.tools.workflow_tools.list_blueprints_util",
+                "sena_backend.builder.tools.workflow_tools.list_blueprints_util",
                 {
                     filters: args?.filters || null
                 }
@@ -420,7 +420,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
             }
 
             const result = await callMethod(client,
-                "sentra_core.builder.tools.workflow_tools.validate_blueprint_util",
+                "sena_backend.builder.tools.workflow_tools.validate_blueprint_util",
                 {
                     blueprint_json: args.blueprint_json
                 }
@@ -437,7 +437,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
 
         if (name === "get_available_events") {
             const result = await callMethod(client,
-                "sentra_core.builder.tools.workflow_tools.get_available_events_util",
+                "sena_backend.builder.tools.workflow_tools.get_available_events_util",
                 {}
             );
 
@@ -454,7 +454,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
 
         if (name === "get_available_actions") {
             const result = await callMethod(client,
-                "sentra_core.builder.tools.workflow_tools.get_available_actions_util",
+                "sena_backend.builder.tools.workflow_tools.get_available_actions_util",
                 {}
             );
 
@@ -471,7 +471,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
 
         if (name === "get_available_ai_agents") {
             const result = await callMethod(client,
-                "sentra_core.builder.tools.workflow_tools.get_available_ai_agents_util",
+                "sena_backend.builder.tools.workflow_tools.get_available_ai_agents_util",
                 {}
             );
 

@@ -72,7 +72,7 @@ export async function handleBlueprintToolCall(request: CallToolRequest, credenti
             }
             const result = await callMethod(
                 client,
-                "sentra_core.bl_engine.core.blueprint_executor.execute_blueprint_manually",
+                "sena_backend.bl_engine.core.blueprint_executor.execute_blueprint_manually",
                 {
                     blueprint_name: args.blueprint_name,
                     doc: args.doc_data
