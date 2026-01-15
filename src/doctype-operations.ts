@@ -34,12 +34,19 @@ export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
                             fieldname: { type: "string", description: "Field name in snake_case. NEVER use: name, owner, creation, modified, docstatus, idx, parent, parenttype, parentfield. Use product_name, customer_name, etc." },
                             fieldtype: {
                                 type: "string",
-                                description: "Frappe field type. Valid types: Data, Text, Small Text, Long Text, Int, Float, Currency, Percent, Check, Date, Datetime, Time, Duration, Select, Link, Dynamic Link, Table, Table MultiSelect, Attach, Attach Image, Image, Signature, Color, Barcode, Geolocation, Rating, Password, Read Only, HTML, HTML Editor, Text Editor, Markdown Editor, Code, JSON, Phone, Autocomplete, Icon. For Data fields, use 'options' for validation: Email, URL, Name, Phone, Barcode, IBAN."
+                                description: `Frappe field type. Valid types: Data, Text, Small Text, Long Text, Int, Float, Currency, Percent, Check, Date, Datetime, Time, Duration, Select, Link, Dynamic Link, Table, Table MultiSelect, Attach, Attach Image, Image, Signature, Color, Barcode, Geolocation, Rating, Password, Read Only, HTML, HTML Editor, Text Editor, Markdown Editor, Code, JSON, Phone, Autocomplete, Icon.
+
+IMPORTANT - How to use relationship fields:
+- Link: One-to-one reference. Set options to target DocType name (e.g., options="Customer").
+- Table: One-to-many embedded rows. Set options to a CHILD TABLE name (DocType with istable=1).
+- Table MultiSelect: Many-to-many relationship. Set options to a CHILD TABLE name that contains a Link field. CANNOT use a regular DocType as options - you must first create a child table using create_child_table with a Link field inside, then use that child table name as options.
+
+For Data fields, use 'options' for validation: Email, URL, Name, Phone, Barcode, IBAN.`
                             },
                             label: { type: "string", description: "Human-readable label" },
                             reqd: { type: "number", description: "Required field (0 or 1)", default: 0 },
-                            unique: { type: "number", description: "Unique field (0 or 1)", default: 0 },
-                            options: { type: "string", description: "For Select: newline-separated options (e.g., 'Draft\\nActive\\nClosed'). For Link: target DocType name. For Data: validation type (Email, URL, Name, Phone, Barcode, IBAN). For Rating: max stars (e.g., '5').", default: "" },
+                            unique: { type: "number", description: "Unique constraint (0 or 1). ONLY works on: Data, Int, Link, Read Only fieldtypes. Will ERROR on Select, Text, Date, Datetime, Float, Currency, etc.", default: 0 },
+                            options: { type: "string", description: "For Select: options separated by actual newline characters (NOT literal backslash-n text). For Link: target DocType name. For Data: validation type (Email, URL, Phone). For Rating: max stars.", default: "" },
                             read_only: { type: "number", description: "Read-only field - cannot be edited in forms (0 or 1)", default: 0 },
                             hidden: { type: "number", description: "Hidden field - not visible in UI (0 or 1)", default: 0 },
                             default: { type: "string", description: "Default value for the field" },
@@ -59,12 +66,12 @@ export const DOCTYPE_OPERATIONS_TOOLS: Tool[] = [
                 },
                 naming_rule: {
                     type: "string",
-                    description: "How to name documents (default: 'By fieldname')",
+                    description: "How to name documents. Valid values: 'Set by user', 'Autoincrement', 'By fieldname', 'By \"Naming Series\" field', 'Expression', 'Expression (old style)', 'Random', 'UUID', 'By script'. Use 'Expression' with autoname='format:PREFIX-.YYYY.-.####'. Use 'By fieldname' with autoname='field:fieldname'. Default: 'By fieldname'.",
                     default: "By fieldname"
                 },
                 autoname: {
                     type: "string",
-                    description: "Field to use for naming (e.g., 'field:customer_name'). If not provided, uses first field. IMPORTANT: Must reference a Data or Int field with unique=1. Do NOT use Date, Datetime, Text, or restricted fieldnames (name, owner, etc.). Prefer omitting this to auto-use first field, or use patterns like 'PROD-.####' for auto-increment."
+                    description: "Naming pattern. Use 'field:fieldname' (references a unique Data/Int field) or auto-increment like 'PROD-.####'. IMPORTANT: Auto-increment prefixes must be globally unique across ALL DocTypes - check existing patterns first. Prefer 'field:fieldname' when unsure."
                 }
             },
             required: ["name"]

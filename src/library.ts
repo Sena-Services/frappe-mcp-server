@@ -11,7 +11,7 @@ import * as frappeHelpers from './frappe-helpers.js';
 
 import { DOCUMENT_TOOLS } from './document-operations.js';
 import { SCHEMA_TOOLS } from './schema-operations.js';
-import { HELPER_TOOLS } from './frappe-instructions.js';
+import { HELPER_TOOLS, getInstructions, FRAPPE_INSTRUCTIONS } from './frappe-instructions.js';
 import { BLUEPRINT_TOOLS } from './blueprint-operations.js';
 import { DOCTYPE_OPERATIONS_TOOLS } from './doctype-operations.js';
 import { WORKFLOW_TOOLS } from './workflow-operations.js';
@@ -532,6 +532,72 @@ export async function executeTool(
             error: error.message || String(error),
             doctype: args.doctype,
             name: args.name
+          }, null, 2)
+        }],
+        isError: true
+      };
+    }
+  }
+
+  // Reconcile bank transaction
+  if (toolName === "reconcile_bank_transaction_with_vouchers") {
+    const bankTransactionName = args.bank_transaction_name as string;
+    const vouchers = args.vouchers as Array<{ payment_doctype: string; payment_name: string; amount: number }>;
+
+    if (!bankTransactionName || !vouchers) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: false,
+            error: "Missing required parameters: bank_transaction_name and vouchers"
+          }, null, 2)
+        }],
+        isError: true
+      };
+    }
+
+    if (!Array.isArray(vouchers) || vouchers.some(v => !v.payment_doctype || !v.payment_name || typeof v.amount !== 'number')) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: false,
+            error: "Invalid format for 'vouchers' parameter. It must be an array of objects, each with 'payment_doctype' (string), 'payment_name' (string), and 'amount' (number)."
+          }, null, 2)
+        }],
+        isError: true
+      };
+    }
+
+    try {
+      const result = await docApi.callMethod(
+        client,
+        "erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool.reconcile_vouchers",
+        {
+          bank_transaction_name: bankTransactionName,
+          vouchers: JSON.stringify(vouchers)
+        }
+      );
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            message: `Bank transaction '${bankTransactionName}' reconciled successfully`,
+            result: result?.message || result
+          }, null, 2)
+        }],
+        isError: false
+      };
+    } catch (error: any) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: false,
+            error: error.message || String(error),
+            bank_transaction_name: bankTransactionName
           }, null, 2)
         }],
         isError: true
@@ -2855,6 +2921,83 @@ export async function executeTool(
         text: JSON.stringify(data, null, 2)
       }],
       isError: !data?.success
+    };
+  }
+
+  // Messaging tools
+  if (toolName === "send_whatsapp_message") {
+    const result = await docApi.callMethod(
+      client,
+      "senaerp_integrations.whatsapp.doctype.whatsapp_message.whatsapp_message.send_whatsapp_message",
+      {
+        to: args.to,
+        message: args.message,
+        content_type: args.content_type || "text",
+        attachment: args.attachment,
+        reference_doctype: args.reference_doctype,
+        reference_name: args.reference_name
+      }
+    );
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result?.message || result, null, 2)
+      }],
+      isError: false
+    };
+  }
+
+  if (toolName === "send_instagram_message") {
+    const result = await docApi.callMethod(
+      client,
+      "senaerp_integrations.instagram.doctype.instagram_message.instagram_message.send_instagram_message",
+      {
+        to: args.to,
+        message: args.message,
+        content_type: args.content_type || "text",
+        attachment: args.attachment,
+        reference_doctype: args.reference_doctype,
+        reference_name: args.reference_name
+      }
+    );
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(result?.message || result, null, 2)
+      }],
+      isError: false
+    };
+  }
+
+  // Helper tools
+  if (toolName === "get_api_instructions") {
+    const category = args.category as string;
+    const operation = args.operation as string;
+
+    // Validate category
+    const validCategories = Object.keys(FRAPPE_INSTRUCTIONS);
+    if (!validCategories.includes(category)) {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            error: `Invalid category '${category}'`,
+            valid_categories: validCategories
+          }, null, 2)
+        }],
+        isError: true
+      };
+    }
+
+    // Get instructions using the helper function
+    const instructions = getInstructions(category, operation);
+
+    return {
+      content: [{
+        type: "text",
+        text: instructions
+      }],
+      isError: false
     };
   }
 
