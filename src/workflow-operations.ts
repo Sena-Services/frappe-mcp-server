@@ -22,7 +22,7 @@ export const WORKFLOW_TOOLS: Tool[] = [
                 },
                 triggers: {
                     type: "string",
-                    description: "JSON string array of trigger definitions. Each trigger must have: doctype (string), event (string like 'after_insert', 'on_update')"
+                    description: "JSON string array of trigger definitions. For doc_event triggers: {\"doctype\": \"X\", \"event\": \"after_insert\"}. For schedule triggers: {\"trigger_type\": \"schedule\", \"cron\": \"0 9 * * *\"} (no doctype needed)"
                 },
                 actions: {
                     type: "string",
@@ -132,7 +132,24 @@ export const WORKFLOW_TOOLS: Tool[] = [
     },
     {
         name: "get_available_events",
-        description: "Get list of valid Frappe event types for blueprint triggers (24 events like after_insert, on_update, before_save, etc.)",
+        description: `Get all valid trigger event types for blueprint triggers. Returns events grouped by type.
+
+RETURNS:
+- doc_events: Document lifecycle events (after_insert, on_update, before_save, on_submit, on_cancel, on_trash, etc.)
+- schedule_triggers: Time-based triggers (cron expressions)
+- tool_triggers: Manual/API triggers
+- common_events: Most frequently used events
+
+TRIGGER FORMATS in blueprints:
+1. Doc event: {"doctype": "Customer", "event": "after_insert"}
+2. Schedule: {"trigger_type": "schedule", "cron": "0 9 * * *", "timezone": "Asia/Kolkata"} (timezone optional, no doctype needed)
+
+COMMON EVENTS:
+- after_insert: After new document is created and saved
+- on_update: After existing document is modified
+- before_save: Before document is saved (can modify values)
+- on_submit: After document is submitted (for submittable DocTypes)
+- on_trash: Before document is deleted`,
         inputSchema: {
             type: "object",
             properties: {}
@@ -140,7 +157,33 @@ export const WORKFLOW_TOOLS: Tool[] = [
     },
     {
         name: "get_available_actions",
-        description: "Get list of valid action types for blueprint actions (CRUD operations, conditionals, notifications, etc.)",
+        description: `Get all valid action types for blueprint actions with full schema and syntax documentation.
+
+RETURNS:
+- by_category: Actions grouped by category (CRUD, Conditional, Communication, AI, Vendor, etc.)
+- required_params: Required parameters for each action
+- schemas: Full parameter schema for each action (types, descriptions, defaults)
+- syntax_docs: Extended syntax documentation for complex actions (IMPORTANT - contains condition format!)
+
+SYNTAX_DOCS includes (check 'if' and 'switch' actions):
+- Condition format: ["field", "operator", "value"]
+- Operators: ==, !=, >, <, >=, <=, in, not_in, is_empty, is_not_empty
+- Compound conditions: {"AND": [...]} and {"OR": [...]}
+- Nested conditions: {"AND": [[...], {"OR": [[...], [...]]}]}
+- Interpolation: {{doc.field}}, {{context.var}}, {{doc.link_field.subfield}}, {{now}}
+
+ACTION FORMAT in blueprints:
+{"action_name": {"param1": "value1", "param2": "value2"}}
+
+COMMON ACTIONS:
+- create_document: Create new document {"doctype": "X", "fields": {...}}
+- update_document: Update existing {"doctype": "X", "name": "Y", "fields": {...}}
+- if: Conditional branching {"condition": [...], "then": [...], "else": [...]}
+- switch: Multi-branch (exact value matching only, NOT for numeric comparisons)
+- send_whatsapp_message: Send WhatsApp {"to": "phone", "message": "text"}
+- ai_agent: Invoke AI agent {"agent_name": "X", "input": "prompt"}
+
+IMPORTANT: Always call this tool before creating blueprints to get current action schemas and condition syntax.`,
         inputSchema: {
             type: "object",
             properties: {}
@@ -252,7 +295,7 @@ export async function handleWorkflowToolCall(request: CallToolRequest, credentia
                             success: false,
                             error: triggersValidation.error,
                             suggestion: triggersValidation.suggestion,
-                            fix_hint: "Triggers should be: [{\"doctype\": \"DocTypeName\", \"event\": \"after_insert\"}]"
+                            fix_hint: "Doc event triggers: [{\"doctype\": \"DocTypeName\", \"event\": \"after_insert\"}]. Schedule triggers: [{\"trigger_type\": \"schedule\", \"cron\": \"0 9 * * *\"}]"
                         }, null, 2)
                     }],
                     isError: true

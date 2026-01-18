@@ -1603,11 +1603,13 @@ export async function executeTool(
             'sena_backend.builder.tools.workflow_tools.get_available_events_util',
             {}
           );
-          if (response?.success) {
-            results.available_events = response.events;
+          // Frappe API wraps return value in {message: ...}, so extract it
+          const data = response?.message || response;
+          if (data?.success) {
+            results.available_events = data.events;
           } else {
-            console.error(`[explore_system] Error getting available events:`, response?.error);
-            results.available_events = { error: response?.error || 'Failed to get events' };
+            console.error(`[explore_system] Error getting available events:`, data?.error);
+            results.available_events = { error: data?.error || 'Failed to get events' };
           }
         } catch (error: any) {
           console.error(`[explore_system] Error getting available events:`, error.message);
@@ -1624,11 +1626,13 @@ export async function executeTool(
             'sena_backend.builder.tools.workflow_tools.get_available_actions_util',
             {}
           );
-          if (response?.success) {
-            results.available_actions = response.actions;
+          // Frappe API wraps return value in {message: ...}, so extract it
+          const data = response?.message || response;
+          if (data?.success) {
+            results.available_actions = data.actions;
           } else {
-            console.error(`[explore_system] Error getting available actions:`, response?.error);
-            results.available_actions = { error: response?.error || 'Failed to get actions' };
+            console.error(`[explore_system] Error getting available actions:`, data?.error);
+            results.available_actions = { error: data?.error || 'Failed to get actions' };
           }
         } catch (error: any) {
           console.error(`[explore_system] Error getting available actions:`, error.message);
