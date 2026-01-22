@@ -42,32 +42,33 @@ export async function getDocTypeSchema(client: FrappeApp, doctype: string): Prom
         issingle: meta.issingle === 1,
         istable: meta.istable === 1,
         custom: meta.custom === 1,
-        fields: allFields.map((field: any) => ({
-          fieldname: field.fieldname,
-          label: field.label,
-          fieldtype: field.fieldtype,
-          required: field.reqd === 1,
-          description: field.description,
-          default: field.default,
-          options: field.options,
-          min_length: field.min_length,
-          max_length: field.max_length,
-          min_value: field.min_value,
-          max_value: field.max_value,
-          linked_doctype: field.fieldtype === "Link" ? field.options : null,
-          child_doctype: field.fieldtype === "Table" ? field.options : null,
-          in_list_view: field.in_list_view === 1,
-          in_standard_filter: field.in_standard_filter === 1,
-          in_global_search: field.in_global_search === 1,
-          bold: field.bold === 1,
-          hidden: field.hidden === 1,
-          read_only: field.read_only === 1,
-          allow_on_submit: field.allow_on_submit === 1,
-          set_only_once: field.set_only_once === 1,
-          allow_bulk_edit: field.allow_bulk_edit === 1,
-          translatable: field.translatable === 1,
-          is_custom_field: field.is_custom_field === 1,
-        })),
+        // Aggressive compact format - filter out UI-only fields, hidden fields, strip descriptions
+        fields: allFields
+          // Filter out UI layout fields and hidden fields
+          .filter((field: any) => {
+            const uiOnlyTypes = ['Section Break', 'Column Break', 'HTML', 'Fold', 'Tab Break'];
+            if (uiOnlyTypes.includes(field.fieldtype)) return false;
+            if (field.hidden === 1) return false;
+            return true;
+          })
+          .map((field: any) => {
+            const f: any = {
+              fieldname: field.fieldname,
+              fieldtype: field.fieldtype,
+            };
+            // Only include label if different from fieldname
+            if (field.label && field.label !== field.fieldname) f.label = field.label;
+            // Required fields
+            if (field.reqd === 1) f.required = true;
+            // Options (for Select, Link, Table fields)
+            if (field.options) f.options = field.options;
+            // Link/Table specific
+            if (field.fieldtype === "Link") f.linked_doctype = field.options;
+            if (field.fieldtype === "Table") f.child_doctype = field.options;
+            // Read-only flag only if true
+            if (field.read_only === 1) f.read_only = true;
+            return f;
+          }),
         permissions: docTypeData.permissions || [],
         autoname: meta.autoname,
         name_case: meta.name_case,

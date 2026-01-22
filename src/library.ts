@@ -226,13 +226,19 @@ export async function executeTool(
     };
   }
 
-  // Handle document operations
+  // Handle document operations - compact responses to reduce context size
   if (toolName === "create_document") {
     const result = await docApi.createDocument(client, args.doctype, args.values);
+    // Return only essential info - the LLM already knows what it sent
     return {
       content: [{
         type: "text",
-        text: `Document created successfully:\n${JSON.stringify(result, null, 2)}`
+        text: JSON.stringify({
+          success: true,
+          doctype: args.doctype,
+          name: result.name,
+          message: `Created ${args.doctype} "${result.name}"`
+        }, null, 2)
       }],
       isError: false
     };
@@ -251,10 +257,16 @@ export async function executeTool(
 
   if (toolName === "update_document") {
     const result = await docApi.updateDocument(client, args.doctype, args.name, args.values);
+    // Return only essential info
     return {
       content: [{
         type: "text",
-        text: `Document updated successfully:\n${JSON.stringify(result, null, 2)}`
+        text: JSON.stringify({
+          success: true,
+          doctype: args.doctype,
+          name: result.name || args.name,
+          message: `Updated ${args.doctype} "${result.name || args.name}"`
+        }, null, 2)
       }],
       isError: false
     };
@@ -1981,7 +1993,7 @@ export async function executeTool(
             client,
             'Graph Architecture',
             {},
-            ['architecture_name', 'display_name', 'enabled', 'description', 'nodes', 'edges', 'entry_node', 'exit_nodes', 'python_class'],
+            ['architecture_name', 'display_name', 'enabled', 'is_system', 'multi_agent_system', 'description', 'about', ],
             20
           );
 
@@ -1991,12 +2003,14 @@ export async function executeTool(
               architecture_name: a.architecture_name,
               display_name: a.display_name,
               enabled: a.enabled || false,
+              is_system: a.is_system || false,
+              multi_agent_system: a.multi_agent_system || false,
               description: a.description || '',
-              nodes: a.nodes ? JSON.parse(a.nodes) : [],
-              edges: a.edges ? JSON.parse(a.edges) : [],
-              entry_node: a.entry_node,
-              exit_nodes: a.exit_nodes ? JSON.parse(a.exit_nodes) : [],
-              python_class: a.python_class
+              about: a.about || '',
+              python_class: a.python_class,
+              state_class: a.state_class || '',
+              planner_prompt_file: a.planner_prompt_file || '',
+              responder_prompt_file: a.responder_prompt_file || ''
             })),
             usage_hints: {
               'single_agent': 'Simple ReAct loop (think → act → observe). Best for straightforward tasks. Used by data_agent, ui_agent, workflow_agent.',
@@ -2850,10 +2864,29 @@ export async function executeTool(
       "sena_backend.builder.tools.workflow_tools.get_available_events_util",
       {}
     );
+    // Extract and return compact format - keep descriptions but remove redundancy
+    const events = result?.message?.events || result?.events || {};
+    const byType = events.by_type || {};
+
+    const compactEvents = {
+      doc_events: (byType["Data Table"] || []).map((e: any) => ({
+        event: e.event,
+        description: e.description
+      })),
+      schedule_events: (byType["Schedule"] || []).map((e: any) => ({
+        event: e.event,
+        description: e.description
+      })),
+      tool_events: (byType["Tool"] || []).map((e: any) => ({
+        event: e.event,
+        description: e.description
+      }))
+    };
+
     return {
       content: [{
         type: "text",
-        text: JSON.stringify(result, null, 2)
+        text: JSON.stringify(compactEvents, null, 2)
       }],
       isError: !getSuccess(result)
     };

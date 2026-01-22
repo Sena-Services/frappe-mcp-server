@@ -635,11 +635,20 @@ export async function handleDocumentToolCall(request: any, credentials?: FrappeC
           };
         }
 
+        // Return compact response - only essential info, not the full document
+        // The LLM already knows what it sent, no need to echo it back
+        const compactResult = {
+          success: true,
+          doctype: doctype,
+          name: result.name,
+          message: `Created ${doctype} "${result.name}"`
+        };
+
         return {
           content: [
             {
               type: "text",
-              text: `Document created successfully using ${authMethod} authentication:\n\n${JSON.stringify(result, null, 2)}`,
+              text: JSON.stringify(compactResult, null, 2),
             },
           ],
         };
@@ -700,11 +709,19 @@ export async function handleDocumentToolCall(request: any, credentials?: FrappeC
         const result = await updateDocument(client, doctype, docName, values);
         console.error(`Result from updateDocument:`, JSON.stringify(result, null, 2));
 
+        // Return compact response - only essential info
+        const compactResult = {
+          success: true,
+          doctype: doctype,
+          name: result.name || docName,
+          message: `Updated ${doctype} "${result.name || docName}"`
+        };
+
         return {
           content: [
             {
               type: "text",
-              text: `Document updated successfully:\n\n${JSON.stringify(result, null, 2)}`,
+              text: JSON.stringify(compactResult, null, 2),
             },
           ],
         };
@@ -1055,15 +1072,16 @@ export async function handleDocumentToolCall(request: any, credentials?: FrappeC
         // Create the new document
         const result = await createDocument(client, doctype, newDocValues);
 
+        // Return compact response - no need to echo full document
         return {
           content: [{
             type: "text",
             text: JSON.stringify({
               success: true,
-              message: `Duplicated '${sourceName}' to '${result.name}'`,
+              doctype: doctype,
               source_name: sourceName,
               new_name: result.name,
-              new_document: result
+              message: `Duplicated '${sourceName}' to '${result.name}'`
             }, null, 2)
           }],
         };
