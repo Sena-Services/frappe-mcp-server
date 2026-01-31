@@ -140,21 +140,8 @@ export async function executeTool(
 
   // Handle web_search
   if (toolName === "web_search") {
-    const tavilyApiKey = process.env.TAVILY_API_KEY;
-    if (!tavilyApiKey) {
-      return {
-        content: [{
-          type: "text",
-          text: JSON.stringify({
-            success: false,
-            error: "TAVILY_API_KEY not configured in environment"
-          }, null, 2)
-        }],
-        isError: true
-      };
-    }
     try {
-      const result = await executeWebSearch(args, tavilyApiKey);
+      const result = await executeWebSearch(args, "");
       return {
         content: [{
           type: "text",
@@ -178,21 +165,8 @@ export async function executeTool(
 
   // Handle web_extract
   if (toolName === "web_extract") {
-    const tavilyApiKey = process.env.TAVILY_API_KEY;
-    if (!tavilyApiKey) {
-      return {
-        content: [{
-          type: "text",
-          text: JSON.stringify({
-            success: false,
-            error: "TAVILY_API_KEY not configured in environment"
-          }, null, 2)
-        }],
-        isError: true
-      };
-    }
     try {
-      const result = await executeWebExtract(args, tavilyApiKey);
+      const result = await executeWebExtract(args, "");
       return {
         content: [{
           type: "text",

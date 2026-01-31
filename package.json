@@ -45,6 +45,7 @@
     "axios": "^1.7.2",
     "dotenv": "^17.2.3",
     "express": "^4.19.2",
+    "playwright": "^1.54.0",
     "frappe-js-sdk": "^1.7.0",
     "yargs": "^17.7.2"
   },
