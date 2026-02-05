@@ -17,6 +17,7 @@ import { DOCTYPE_OPERATIONS_TOOLS } from './doctype-operations.js';
 import { WORKFLOW_TOOLS } from './workflow-operations.js';
 import { UI_TOOLS } from './ui-operations.js';
 import { WEB_TOOLS, executeWebSearch, executeWebExtract } from './web-operations.js';
+import { REGISTRY_TOOLS, handleRegistryOperationsToolCall } from './registry-operations.js';
 
 /**
  * Helper function to extract success from Frappe API response
@@ -110,6 +111,7 @@ export function listTools() {
     ...WORKFLOW_TOOLS,
     ...UI_TOOLS,
     ...WEB_TOOLS,
+    ...REGISTRY_TOOLS,
     {
       name: "ping",
       description: "A simple tool to check if the server is responding.",
@@ -186,6 +188,15 @@ export async function executeTool(
         isError: true
       };
     }
+  }
+
+  // Handle registry operations
+  const registryToolNames = ["search_registry", "get_registry_item_details", "check_capability_in_registry", "get_registry_installed_apps", "import_app", "get_install_status"];
+  if (registryToolNames.includes(toolName)) {
+    return handleRegistryOperationsToolCall(
+      { params: { name: toolName, arguments: args } } as any,
+      credentials
+    );
   }
 
   // Handle call_method

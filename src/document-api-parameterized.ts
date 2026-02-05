@@ -118,8 +118,8 @@ export async function listDocuments(
     }
 
     // Normalize limit: -1 or 0 means "get all records" (no limit)
-    // We pass undefined to omit the limit parameter entirely
-    const effectiveLimit = (limit === -1 || limit === 0) ? undefined : limit;
+    // Default to 50 if not specified (Frappe SDK defaults to 20 which is too low)
+    const effectiveLimit = (limit === -1 || limit === 0) ? undefined : (limit ?? 50);
 
     const optionsForGetDocList = {
       fields: fields,

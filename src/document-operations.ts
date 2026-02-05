@@ -236,7 +236,7 @@ export const DOCUMENT_TOOLS = [
         },
         limit: {
           type: "number",
-          description: "Maximum number of documents to retrieve. Default is 20. To get ALL records, omit this parameter or set to 0. Do NOT use -1. Use with limit_start for pagination.",
+          description: "Maximum number of documents to retrieve. Default is 50. To get ALL records, set to 0. Use with limit_start for pagination.",
         },
         limit_start: {
           type: "number",
